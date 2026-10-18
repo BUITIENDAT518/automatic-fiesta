@@ -42,6 +42,10 @@ class Settings:
     ghn_host: str = field(default_factory=lambda: _env("GHN_HOST", "https://online-gateway.ghn.vn/shiip/public-api"))
     haravan_host: str = field(default_factory=lambda: _env("HARAVAN_HOST", "https://apis.haravan.com"))
     jt_host: str = field(default_factory=lambda: _env("JT_HOST", "https://ylopenapi.jtexpress.vn/webopenplatformapi/api"))
+    viettelpost_host: str = field(default_factory=lambda: _env("VIETTELPOST_HOST", "https://partner.viettelpost.vn/v2"))
+    vnpost_host: str = field(default_factory=lambda: _env("VNPOST_HOST", "https://api-my.vnpost.vn"))
+    telegram_bot_token: str = field(default_factory=lambda: _env("TELEGRAM_BOT_TOKEN", ""))
+    telegram_admin_ids: str = field(default_factory=lambda: _env("TELEGRAM_ADMIN_IDS", ""))
     track_interval_s: int = field(default_factory=lambda: int(_env("TRACK_INTERVAL_S", "300")))
 
 

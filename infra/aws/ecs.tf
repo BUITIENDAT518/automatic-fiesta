@@ -76,6 +76,7 @@ locals {
     collector = ["python", "-m", "orderhub.collector"]
     processor = ["python", "-m", "orderhub.processor"]
     tracker   = ["python", "-m", "orderhub.tracker"]
+    telegram  = ["python", "-m", "orderhub.telegram_bot"]
   }
 }
 

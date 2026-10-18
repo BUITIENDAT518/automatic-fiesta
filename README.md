@@ -84,6 +84,8 @@ sang `error`. Tài khoản vận chuyển được xoay vòng round-robin, và h
 | TPOS | Lấy đơn | `{"tenant", "username", "password"}` | **Thử nghiệm**: TPOS không có tài liệu API công khai |
 | GHTK | Vận chuyển | `{"token": "...", "partner_code": "..."}` | `/services/shipment/v2/{mã}` |
 | GHN | Vận chuyển | `{"token": "...", "shop_id": 123}` | `/v2/shipping-order/detail` |
+| Viettel Post | Vận chuyển | `{"username", "password"}` | Kiểm tra đăng nhập `/v2/user/Login`; chưa tra hành trình |
+| VNPost | Vận chuyển | `{"username", "password"}` | **Chưa xác minh**: endpoint MyVNPost lấy từ web app |
 | J&T Express | Vận chuyển | `{"api_account", "private_key", "customer_code", "password"}` | `/logistics/trace`, ký `digest` |
 
 SPX Express, BEST Express và Ninja Van chưa có connector: SPX và BEST không công bố API công khai (chỉ cấp cho
@@ -93,3 +95,12 @@ API (admin): `GET /api/accounts`, `POST /api/accounts`, `PATCH /api/accounts/{pl
 `DELETE /api/accounts/{platform}/{id}`, `POST /api/accounts/{platform}/{id}/check` (kiểm tra đăng nhập thật).
 Service `tracker` cập nhật hành trình đơn GHTK/GHN; webhook `POST /webhooks/carrier/{ghtk|ghn}` kích hoạt kiểm tra
 ngay mã vận đơn đó (payload không được tin là dữ liệu, luôn hỏi lại API của hãng).
+
+### Nhập tài khoản hàng loạt
+
+- Telegram: đặt `TELEGRAM_BOT_TOKEN`, `TELEGRAM_ADMIN_IDS` (ID Telegram, phân cách bằng dấu phẩy) rồi gửi file
+  CSV/XLSX/JSON vào bot. Bot nạp vào pool, kiểm tra đăng nhập, trả báo cáo từng dòng và xoá tin nhắn chứa file.
+  `/mau` gửi file mẫu, `/pool` xem tình trạng.
+- API: `POST /api/accounts/import?filename=tai_khoan.xlsx` với nội dung file làm body (key admin).
+- Nền tảng lấy từ cột `platform`, tên sheet hoặc tên file; tên cột tiếng Việt/không dấu đều được nhận
+  (`Mã shop`, `Tài khoản`, `Mật khẩu`, `Token`, `Link`…).

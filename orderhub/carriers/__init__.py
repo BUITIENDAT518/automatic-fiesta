@@ -35,6 +35,8 @@ CARRIER_ALIASES = {
     Platform.ghtk: ("ghtk", "giao hàng tiết kiệm", "giao hang tiet kiem", "giaohangtietkiem"),
     Platform.ghn: ("ghn", "giao hàng nhanh", "giao hang nhanh", "giaohangnhanh"),
     Platform.jt: ("j&t", "j & t", "jt express", "jtexpress"),
+    Platform.viettelpost: ("viettel post", "viettelpost", "vtp"),
+    Platform.vnpost: ("vnpost", "vietnam post", "bưu điện", "buu dien", "ems"),
 }
 
 
@@ -139,13 +141,47 @@ class JtClient(CarrierClient):
                               logistics_status=last.get("scanTypeName") or last.get("desc") or str(code))
 
 
+class LoginOnlyCarrier(CarrierClient):
+    """Carriers whose public API only lets us verify the login; shipment status arrives through the order source."""
+
+    async def login(self) -> None:
+        raise NotImplementedError
+
+    async def track(self, tracking_number: str) -> TrackingResult:
+        raise NotFound(f"{self.account.platform.value}: chưa hỗ trợ tra cứu hành trình qua API")
+
+
+class ViettelPostClient(LoginOnlyCarrier):
+    """Viettel Post partner API: POST /v2/user/Login {USERNAME, PASSWORD} → data.token."""
+
+    async def login(self) -> None:
+        if self.creds.get("token") and not self.creds.get("password"):
+            return
+        resp = await self.http.post(f"{self.settings.viettelpost_host}/user/Login",
+                                    json={"USERNAME": self.creds.get("username"), "PASSWORD": self.creds.get("password")})
+        data = resp.json()
+        if data.get("error") or not (data.get("data") or {}).get("token"):
+            raise CarrierError(f"viettelpost: {data.get('message') or resp.status_code}")
+
+
+class VnPostClient(LoginOnlyCarrier):
+    """MyVNPost: POST /api/auth/login (endpoint taken from the my.vnpost.vn web app; body fields unverified)."""
+
+    async def login(self) -> None:
+        resp = await self.http.post(f"{self.settings.vnpost_host}/api/auth/login",
+                                    json={"username": self.creds.get("username"), "password": self.creds.get("password")})
+        if resp.status_code != 200:
+            raise CarrierError(f"vnpost: HTTP {resp.status_code} {resp.text[:150]}")
+
+
 class MockCarrierClient(CarrierClient):
     async def track(self, tracking_number: str) -> TrackingResult:
         st = random.choice(["transporting", "delivering", "delivered", "delivered", "delivery_fail"])
         return TrackingResult(tracking_number=tracking_number, status=GHN[st], logistics_status=GHN_TEXT[st])
 
 
-CLIENTS: dict[Platform, type[CarrierClient]] = {Platform.ghtk: GhtkClient, Platform.ghn: GhnClient, Platform.jt: JtClient}
+CLIENTS: dict[Platform, type[CarrierClient]] = {Platform.ghtk: GhtkClient, Platform.ghn: GhnClient, Platform.jt: JtClient,
+                                                Platform.viettelpost: ViettelPostClient, Platform.vnpost: VnPostClient}
 
 
 def build_carrier(account: Shop, settings: Settings, http: httpx.AsyncClient) -> CarrierClient:

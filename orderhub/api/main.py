@@ -4,19 +4,16 @@ import asyncio
 import contextlib
 import json
 import secrets
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import parse_qs
 
-import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 
-from orderhub import bus
-from orderhub.carriers import CarrierError, NotFound, build_carrier
+from orderhub import accounts, bus
 from orderhub.collector.__main__ import POKE_KEY
 from orderhub.config import CHANNEL_UPDATES, get_settings
-from orderhub.connectors import ConnectorError, build_connector
+from orderhub.importer import parse_file
 from orderhub.models import CARRIER_PLATFORMS, ORDER_PLATFORMS, OrderStatus, Platform, Shop
 from orderhub.pool import AccountPool
 from orderhub.regions import BAC, NAM, PROVINCES_2025, TRUNG
@@ -147,10 +144,7 @@ async def list_shops(role: str = Depends(require_role)):
 @app.post("/api/accounts", status_code=201)
 @app.post("/api/shops", status_code=201, include_in_schema=False)
 async def add_account(shop: Shop, _: str = Depends(require_admin)):
-    shop_id = await state["db"].upsert_shop(shop)
-    await state["pool"].reset(shop.key)
-    await state["redis"].sadd(POKE_KEY, shop.key)
-    return {"id": shop_id}
+    return {"id": await accounts.save_account(shop, state["db"], state["pool"], state["redis"])}
 
 
 async def _account(platform: Platform, shop_id: str) -> Shop:
@@ -178,34 +172,25 @@ async def delete_account(platform: Platform, shop_id: str, _: str = Depends(requ
 @app.post("/api/accounts/{platform}/{shop_id}/check")
 async def check_account(platform: Platform, shop_id: str, tracking_number: str | None = None,
                         _: str = Depends(require_admin)):
-    """Live login test: order accounts fetch the last hour of orders; carrier accounts track one shipment."""
     acc = await _account(platform, shop_id)
-    pool = state["pool"]
+    res = await accounts.check_account(acc, settings, state["db"], state["pool"], tracking_number)
+    if res["ok"] is None:
+        raise HTTPException(422, res["error"])
+    return res
+
+
+@app.post("/api/accounts/import")
+async def import_accounts(request: Request, filename: str = Query(...), _: str = Depends(require_admin)):
+    """Upload a CSV / XLSX / JSON file as the raw request body; rows are mapped to pool accounts."""
     try:
-        async with httpx.AsyncClient(timeout=20) as http:
-            if platform in CARRIER_PLATFORMS:
-                if not tracking_number:
-                    raise HTTPException(422, "tracking_number is required to check a carrier account")
-                try:
-                    res = await build_carrier(acc, settings, http).track(tracking_number)
-                    detail = res.model_dump(mode="json")
-                except NotFound as e:
-                    detail = {"tracking_number": tracking_number, "not_found": str(e)}
-            else:
-                conn = build_connector(acc, settings, http)
-                await conn.login()
-                if conn.credentials_changed:
-                    await state["db"].save_credentials(acc)
-                now = datetime.now(timezone.utc)
-                n = 0
-                async for _o in conn.fetch_orders(now - timedelta(hours=1), now):
-                    n += 1
-                detail = {"orders_last_hour": n}
-    except (ConnectorError, CarrierError, httpx.HTTPError, KeyError, ValueError) as e:
-        await pool.report_failure(acc.key, f"{type(e).__name__}: {e}")
-        return {"ok": False, "error": str(e), "health": await pool.health(acc.key)}
-    await pool.report_ok(acc.key)
-    return {"ok": True, "detail": detail, "health": await pool.health(acc.key)}
+        rows = parse_file(filename, await request.body())
+    except (ValueError, KeyError) as e:
+        raise HTTPException(422, f"không đọc được file: {e}") from e
+    for row in rows:
+        if row.account:
+            await accounts.save_account(row.account, state["db"], state["pool"], state["redis"])
+    return {"imported": sum(1 for r in rows if r.account), "rows": [
+        {"row": r.row, "platform": r.platform, "shop_id": r.shop_id, "error": r.error} for r in rows]}
 
 
 @app.post("/webhooks/carrier/{carrier}", status_code=200)

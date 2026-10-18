@@ -15,8 +15,8 @@ variable "image_tag" {
 }
 
 variable "replicas" {
-  type    = object({ api = number, collector = number, processor = number, tracker = number })
-  default = { api = 2, collector = 2, processor = 2, tracker = 1 }
+  type    = object({ api = number, collector = number, processor = number, tracker = number, telegram = number })
+  default = { api = 2, collector = 2, processor = 2, tracker = 1, telegram = 1 }
 }
 
 variable "seed_mock_shops" {
