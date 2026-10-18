@@ -9,6 +9,7 @@ Credentials: {"tenant": "<subdomain>", "username": "...", "password": "..."}.
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import AsyncIterator
 from datetime import datetime
@@ -22,12 +23,19 @@ STATE = {"draft": OrderStatus.pending, "open": OrderStatus.ready_to_ship, "paid"
 PAGE_SIZE = 200
 
 
+def tenant_from(value: str | None) -> str | None:
+    """Accepts 'shop', 'shop.tpos.vn' or any URL such as 'https://shop.tpos.vn/tpagev2/#/...'."""
+    m = re.match(r"^(?:https?://)?([a-z0-9-]+)(?:\.tpos\.vn)?(?:[/:#?].*)?$", (value or "").strip().lower())
+    return m.group(1) if m else None
+
+
 class TposConnector(Connector):
     @property
     def host(self) -> str:
-        if not self.creds.get("tenant"):
+        tenant = tenant_from(self.creds.get("tenant") or self.shop.shop_id)
+        if not tenant:
             raise ConnectorError("tpos: thiếu tenant trong credentials")
-        return f"https://{self.creds['tenant']}.tpos.vn"
+        return f"https://{tenant}.tpos.vn"
 
     async def refresh_token(self) -> None:
         resp = await self.http.post(f"{self.host}/token", data={

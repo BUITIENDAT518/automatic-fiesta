@@ -150,3 +150,11 @@ async def test_pool_backoff_and_rotation():
 def test_dashboard_lists_pool():
     html = (Path(__file__).parent.parent / "orderhub/api/static/index.html").read_text()
     assert "/api/accounts" in html and "Pool tài khoản" in html
+
+
+def test_tpos_tenant_from_url():
+    from orderhub.connectors.tpos import tenant_from
+    assert tenant_from("https://shopphuongthaole.tpos.vn/tpagev2/#/configs/sale-order") == "shopphuongthaole"
+    assert tenant_from("phuongproshop.tpos.vn") == "phuongproshop"
+    assert tenant_from("phuongproshop") == "phuongproshop"
+    assert tenant_from("") is None
