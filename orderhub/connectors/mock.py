@@ -34,6 +34,8 @@ CARRIERS = {
     Platform.tiktok: ["J&T Express", "Giao Hàng Nhanh", "BEST Express", "Ninja Van"],
     Platform.lazada: ["Lazada Express", "Giao Hàng Tiết Kiệm", "Ninja Van", "J&T Express"],
 }
+DEFAULT_CARRIERS = ["Giao Hàng Tiết Kiệm", "Giao Hàng Nhanh", "Viettel Post", "J&T Express"]
+PREFIX = {"tiktok": "57", "lazada": "4", "sapo": "SON", "tpos": "TP", "nhanh": "NH", "pancake": "PK"}
 PRODUCTS = [("AO-THUN-01", "Áo thun cotton basic", 129000), ("QUAN-JEAN-02", "Quần jean slim fit", 349000),
             ("TAI-NGHE-03", "Tai nghe Bluetooth TWS", 259000), ("SAC-DU-PHONG-04", "Sạc dự phòng 10000mAh", 299000),
             ("SERUM-05", "Serum vitamin C 30ml", 189000), ("GIAY-06", "Giày sneaker trắng", 459000),
@@ -43,6 +45,14 @@ RAW = {OrderStatus.pending: "UNPAID", OrderStatus.ready_to_ship: "READY_TO_SHIP"
        OrderStatus.delivered: "COMPLETED", OrderStatus.cancelled: "CANCELLED", OrderStatus.returned: "TO_RETURN"}
 LOGISTICS = {OrderStatus.pending: None, OrderStatus.ready_to_ship: "Chờ lấy hàng", OrderStatus.shipping: "Đang vận chuyển",
              OrderStatus.delivered: "Giao thành công", OrderStatus.cancelled: "Đã hủy", OrderStatus.returned: "Đang hoàn hàng"}
+
+def _tracking(rng: random.Random, carrier: str) -> str:
+    if "Tiết Kiệm" in carrier:
+        return f"S{rng.randint(10**6, 10**7)}.{rng.randint(10**8, 10**9)}"
+    if "Nhanh" in carrier:
+        return "".join(rng.choices("ABCDEFGHKLMNPQRTUVWXY", k=4)) + "".join(rng.choices("0123456789", k=4))
+    return f"{carrier[:2].upper()}{rng.randint(10**9, 10**10)}VN"
+
 
 _STATE: dict[str, dict[str, NormalizedOrder]] = {}
 
@@ -70,9 +80,9 @@ class MockConnector(Connector):
             status = OrderStatus.cancelled
         elif r < 0.07 and stage >= 2:
             status = OrderStatus.returned
-        prefix = {"shopee": "", "tiktok": "57", "lazada": "4"}[platform.value]
+        prefix = PREFIX.get(platform.value, "")
         order_id = prefix + created.strftime("%y%m%d") + "".join(rng.choices("0123456789ABCDEFGHJKLMNPQRSTUVWXYZ", k=8))
-        carrier = rng.choice(CARRIERS[platform])
+        carrier = rng.choice(CARRIERS.get(platform, DEFAULT_CARRIERS))
         return NormalizedOrder(
             platform=platform, shop_id=self.shop.shop_id, shop_name=self.shop.name, order_id=order_id,
             status=status, raw_status=RAW[status], created_at=created, updated_at=created, total_amount=total,
@@ -81,7 +91,7 @@ class MockConnector(Connector):
                 recipient_name=name, phone=phone,
                 address=f"{rng.randint(1, 300)} {rng.choice(STREETS)}, {ward}, {district}, {province}",
                 ward=ward, district=district, province=None if rng.random() < 0.3 else province, carrier=carrier,
-                tracking_number=None if status == OrderStatus.pending else f"{carrier[:2].upper()}{rng.randint(10**9, 10**10)}VN",
+                tracking_number=None if status == OrderStatus.pending else _tracking(rng, carrier),
                 logistics_status=LOGISTICS[status],
             ),
             items=items,
@@ -109,7 +119,7 @@ class MockConnector(Connector):
                 o.raw_status, o.updated_at = RAW[o.status], now
                 o.shipping.logistics_status = LOGISTICS[o.status]
                 if not o.shipping.tracking_number:
-                    o.shipping.tracking_number = f"{(o.shipping.carrier or 'XX')[:2].upper()}{rng.randint(10**9, 10**10)}VN"
+                    o.shipping.tracking_number = _tracking(rng, o.shipping.carrier or "XX")
                 yield o
         cutoff = now - timedelta(hours=self.settings.retention_hours)
         for k in [k for k, o in state.items() if o.created_at < cutoff]:

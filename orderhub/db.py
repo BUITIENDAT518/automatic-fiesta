@@ -137,6 +137,24 @@ class Database:
             for r in rows
         ]
 
+    async def set_shop_active(self, platform: str, shop_id: str, active: bool) -> bool:
+        res = await self.pool.execute(
+            "UPDATE shops SET active = $3, updated_at = now() WHERE platform = $1 AND shop_id = $2",
+            platform, shop_id, active,
+        )
+        return res.endswith("1")
+
+    async def delete_shop(self, platform: str, shop_id: str) -> bool:
+        res = await self.pool.execute("DELETE FROM shops WHERE platform = $1 AND shop_id = $2", platform, shop_id)
+        return res.endswith("1")
+
+    async def get_shop(self, platform: str, shop_id: str) -> Shop | None:
+        r = await self.pool.fetchrow("SELECT * FROM shops WHERE platform = $1 AND shop_id = $2", platform, shop_id)
+        if not r:
+            return None
+        return Shop(id=r["id"], platform=Platform(r["platform"]), shop_id=r["shop_id"], name=r["name"],
+                    active=r["active"], credentials=self.cipher.decrypt_json(r["credentials_enc"]))
+
     async def count_shops(self) -> int:
         return await self.pool.fetchval("SELECT count(*) FROM shops")
 
@@ -152,6 +170,25 @@ class Database:
             enc(s.recipient_name), enc(s.phone), enc(s.address), s.ward, s.district, s.province, s.province_legacy,
             s.region, s.subregion, s.carrier, s.tracking_number, s.logistics_status,
             json.dumps([i.model_dump(mode="json") for i in o.items]),
+        )
+
+    async def orders_to_track(self, hours: int) -> list[dict]:
+        """Recent orders with a tracking number that have not reached a final state."""
+        rows = await self.pool.fetch(
+            """SELECT platform, shop_id, order_id, carrier, tracking_number, logistics_status FROM orders
+               WHERE created_at >= $1 AND tracking_number IS NOT NULL AND carrier IS NOT NULL
+                 AND status NOT IN ('delivered', 'cancelled', 'returned')""",
+            datetime.now(timezone.utc) - timedelta(hours=hours),
+        )
+        return [dict(r) for r in rows]
+
+    async def update_logistics(self, platform: str, shop_id: str, order_id: str, logistics_status: str,
+                               status: str) -> None:
+        await self.pool.execute(
+            """UPDATE orders SET logistics_status = $4,
+                 status = CASE WHEN $5 = 'unknown' THEN status ELSE $5 END, ingested_at = now()
+               WHERE platform = $1 AND shop_id = $2 AND order_id = $3""",
+            platform, shop_id, order_id, logistics_status, status,
         )
 
     async def purge_older_than(self, hours: int) -> int:

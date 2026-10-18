@@ -88,7 +88,7 @@ def test_pii():
     assert mask_name("Nguyễn Văn An") == "Nguyễn V. An"
 
 
-@pytest.mark.parametrize("p", list(Platform))
+@pytest.mark.parametrize("p", [Platform.shopee, Platform.tiktok, Platform.lazada, Platform.tpos, Platform.nhanh])
 def test_token_expiring(p):
     c = build_connector(shop(p, {"access_token": "t", "expires_at": 0}), S, httpx.AsyncClient())
     assert c.token_expiring()

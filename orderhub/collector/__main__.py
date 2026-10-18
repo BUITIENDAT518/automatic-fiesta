@@ -16,7 +16,8 @@ import httpx
 from orderhub import bus
 from orderhub.config import STREAM_INGEST, get_settings
 from orderhub.connectors import ConnectorError, build_connector
-from orderhub.models import Shop
+from orderhub.models import ORDER_PLATFORMS, Shop
+from orderhub.pool import AccountPool
 from orderhub.runtime import open_db, setup_logging, stop_event
 
 log = logging.getLogger("orderhub.collector")
@@ -42,7 +43,6 @@ async def poll_shop(shop: Shop, settings, db, r, http) -> int:
         await r.xadd(STREAM_INGEST, {"order": order.model_dump_json()}, maxlen=200_000, approximate=True)
         n += 1
     await r.set(cursor_key(shop), now.timestamp())
-    await r.hset("collector:status", shop.key, f"{now.isoformat()}|ok|{n}|{settings.worker_id}")
     return n
 
 
@@ -51,6 +51,7 @@ async def main() -> None:
     settings = get_settings()
     db = await open_db(settings)
     r = bus.connect(settings.redis_url)
+    pool = AccountPool(r)
     lease = bus.Lease(r, settings.worker_id, ttl_ms=max(settings.poll_interval_s * 3, 30) * 1000)
     sem = asyncio.Semaphore(settings.max_concurrent_shops)
     next_due: dict[str, float] = {}
@@ -65,18 +66,19 @@ async def main() -> None:
             async with sem:
                 try:
                     n = await poll_shop(shop, settings, db, r, http)
+                    await pool.report_ok(shop.key, n, settings.worker_id)
                     if n:
                         log.info("%s: %d orders", shop.key, n)
                 except (ConnectorError, httpx.HTTPError, KeyError, ValueError) as e:
-                    log.warning("%s: poll failed: %s", shop.key, e)
-                    await r.hset("collector:status", shop.key,
-                                 f"{datetime.now(timezone.utc).isoformat()}|error|{e}|{settings.worker_id}")
+                    cooldown = await pool.report_failure(shop.key, f"{type(e).__name__}: {e}", settings.worker_id)
+                    log.warning("%s: poll failed (cooldown %ds): %s", shop.key, cooldown, e)
 
         shops: list[Shop] = []
         last_refresh = 0.0
         while not stop.is_set():
             if time.time() - last_refresh > 30:
-                shops, last_refresh = await db.list_shops(with_credentials=True), time.time()
+                shops = [s for s in await db.list_shops(with_credentials=True) if s.platform in ORDER_PLATFORMS]
+                last_refresh = time.time()
             poked = set(await r.smembers(POKE_KEY))
             for shop in shops:
                 k = shop.key
@@ -87,7 +89,9 @@ async def main() -> None:
                 if k in poked:
                     await r.srem(POKE_KEY, k)
                     next_due[k] = 0
-                if time.time() >= next_due.get(k, 0) and (k not in running or running[k].done()):
+                    await pool.reset(k)
+                due = time.time() >= next_due.get(k, 0) and await pool.available(k)
+                if due and (k not in running or running[k].done()):
                     next_due[k] = time.time() + settings.poll_interval_s
                     running[k] = asyncio.create_task(run(shop))
             try:

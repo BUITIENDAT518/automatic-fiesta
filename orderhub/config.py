@@ -35,6 +35,12 @@ class Settings:
     lazada_app_secret: str = field(default_factory=lambda: _env("LAZADA_APP_SECRET", ""))
     lazada_host: str = field(default_factory=lambda: _env("LAZADA_HOST", "https://api.lazada.vn/rest"))
     lazada_auth_host: str = field(default_factory=lambda: _env("LAZADA_AUTH_HOST", "https://auth.lazada.com/rest"))
+    nhanh_app_id: str = field(default_factory=lambda: _env("NHANH_APP_ID", ""))
+    nhanh_host: str = field(default_factory=lambda: _env("NHANH_HOST", "https://pos.open.nhanh.vn"))
+    pancake_host: str = field(default_factory=lambda: _env("PANCAKE_HOST", "https://pos.pages.fm/api/v1"))
+    ghtk_host: str = field(default_factory=lambda: _env("GHTK_HOST", "https://services.giaohangtietkiem.vn"))
+    ghn_host: str = field(default_factory=lambda: _env("GHN_HOST", "https://online-gateway.ghn.vn/shiip/public-api"))
+    track_interval_s: int = field(default_factory=lambda: int(_env("TRACK_INTERVAL_S", "300")))
 
 
 STREAM_INGEST = "orders.ingest"

@@ -32,6 +32,11 @@ services:
     command: ["python", "-m", "orderhub.processor"]
     deploy: {replicas: 2}
 
+  tracker:
+    <<: *app
+    command: ["python", "-m", "orderhub.tracker"]
+    deploy: {replicas: 1}
+
   api:
     <<: *app
     command: ["uvicorn", "orderhub.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]

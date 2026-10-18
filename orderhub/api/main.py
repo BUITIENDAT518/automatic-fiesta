@@ -2,18 +2,26 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import secrets
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import parse_qs
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
+import httpx
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 
 from orderhub import bus
+from orderhub.carriers import CarrierError, NotFound, build_carrier
 from orderhub.collector.__main__ import POKE_KEY
 from orderhub.config import CHANNEL_UPDATES, get_settings
-from orderhub.models import OrderStatus, Platform, Shop
+from orderhub.connectors import ConnectorError, build_connector
+from orderhub.models import CARRIER_PLATFORMS, ORDER_PLATFORMS, OrderStatus, Platform, Shop
+from orderhub.pool import AccountPool
 from orderhub.regions import BAC, NAM, PROVINCES_2025, TRUNG
 from orderhub.runtime import open_db
+from orderhub.tracker.__main__ import POKE_KEY as TRACKER_POKE_KEY
 
 STATIC = Path(__file__).parent / "static"
 settings = get_settings()
@@ -24,6 +32,7 @@ state: dict = {}
 async def lifespan(_: FastAPI):
     state["db"] = await open_db(settings)
     state["redis"] = bus.connect(settings.redis_url)
+    state["pool"] = AccountPool(state["redis"])
     yield
     await state["db"].close()
     await state["redis"].aclose()
@@ -69,7 +78,8 @@ async def dashboard():
 async def meta(role: str = Depends(require_role)):
     return {
         "role": role, "window_hours": settings.window_hours, "regions": [BAC, TRUNG, NAM],
-        "provinces": PROVINCES_2025, "platforms": [p.value for p in Platform],
+        "provinces": PROVINCES_2025, "platforms": [p.value for p in Platform if p in ORDER_PLATFORMS],
+        "carrier_platforms": [p.value for p in CARRIER_PLATFORMS],
         "statuses": [s.value for s in OrderStatus],
     }
 
@@ -112,25 +122,106 @@ async def stats(
                                    _filters(platform, shop_id, region, province, status, carrier))
 
 
-@app.get("/api/shops")
-async def list_shops(role: str = Depends(require_role)):
-    shops = await state["db"].list_shops(active_only=False)
-    status = await state["redis"].hgetall("collector:status")
+def _kind(p: Platform) -> str:
+    return "carrier" if p in CARRIER_PLATFORMS else "orders"
+
+
+@app.get("/api/accounts")
+async def list_accounts(role: str = Depends(require_role), platform: Platform | None = None):
+    """Account pool: every platform account with its live health (ok / cooldown / error …)."""
     out = []
-    for s in shops:
-        last = status.get(s.key, "")
-        parts = last.split("|", 3) if last else []
-        out.append({**s.model_dump(exclude={"credentials"}),
-                    "last_poll_at": parts[0] if parts else None, "last_poll_result": parts[1] if len(parts) > 1 else None,
-                    "last_poll_detail": parts[2] if len(parts) > 2 else None, "worker": parts[3] if len(parts) > 3 else None})
+    for s in await state["db"].list_shops(active_only=False):
+        if platform and s.platform != platform:
+            continue
+        health = await state["pool"].health(s.key)
+        out.append({**s.model_dump(exclude={"credentials"}), "kind": _kind(s.platform),
+                    "health": health if s.active else {**health, "state": "disabled"}})
     return out
 
 
-@app.post("/api/shops", status_code=201)
-async def add_shop(shop: Shop, _: str = Depends(require_admin)):
+@app.get("/api/shops")
+async def list_shops(role: str = Depends(require_role)):
+    return [a for a in await list_accounts(role) if a["kind"] == "orders"]
+
+
+@app.post("/api/accounts", status_code=201)
+@app.post("/api/shops", status_code=201, include_in_schema=False)
+async def add_account(shop: Shop, _: str = Depends(require_admin)):
     shop_id = await state["db"].upsert_shop(shop)
+    await state["pool"].reset(shop.key)
     await state["redis"].sadd(POKE_KEY, shop.key)
     return {"id": shop_id}
+
+
+async def _account(platform: Platform, shop_id: str) -> Shop:
+    acc = await state["db"].get_shop(platform.value, shop_id)
+    if not acc:
+        raise HTTPException(404, "account not found")
+    return acc
+
+
+@app.patch("/api/accounts/{platform}/{shop_id}")
+async def set_account_active(platform: Platform, shop_id: str, active: bool, _: str = Depends(require_admin)):
+    await _account(platform, shop_id)
+    await state["db"].set_shop_active(platform.value, shop_id, active)
+    await state["pool"].reset(f"{platform.value}:{shop_id}")
+    return {"active": active}
+
+
+@app.delete("/api/accounts/{platform}/{shop_id}", status_code=204)
+async def delete_account(platform: Platform, shop_id: str, _: str = Depends(require_admin)):
+    await _account(platform, shop_id)
+    await state["db"].delete_shop(platform.value, shop_id)
+    await state["pool"].reset(f"{platform.value}:{shop_id}")
+
+
+@app.post("/api/accounts/{platform}/{shop_id}/check")
+async def check_account(platform: Platform, shop_id: str, tracking_number: str | None = None,
+                        _: str = Depends(require_admin)):
+    """Live login test: order accounts fetch the last hour of orders; carrier accounts track one shipment."""
+    acc = await _account(platform, shop_id)
+    pool = state["pool"]
+    try:
+        async with httpx.AsyncClient(timeout=20) as http:
+            if platform in CARRIER_PLATFORMS:
+                if not tracking_number:
+                    raise HTTPException(422, "tracking_number is required to check a carrier account")
+                try:
+                    res = await build_carrier(acc, settings, http).track(tracking_number)
+                    detail = res.model_dump(mode="json")
+                except NotFound as e:
+                    detail = {"tracking_number": tracking_number, "not_found": str(e)}
+            else:
+                conn = build_connector(acc, settings, http)
+                await conn.login()
+                if conn.credentials_changed:
+                    await state["db"].save_credentials(acc)
+                now = datetime.now(timezone.utc)
+                n = 0
+                async for _o in conn.fetch_orders(now - timedelta(hours=1), now):
+                    n += 1
+                detail = {"orders_last_hour": n}
+    except (ConnectorError, CarrierError, httpx.HTTPError, KeyError, ValueError) as e:
+        await pool.report_failure(acc.key, f"{type(e).__name__}: {e}")
+        return {"ok": False, "error": str(e), "health": await pool.health(acc.key)}
+    await pool.report_ok(acc.key)
+    return {"ok": True, "detail": detail, "health": await pool.health(acc.key)}
+
+
+@app.post("/webhooks/carrier/{carrier}", status_code=200)
+async def carrier_webhook(carrier: Platform, request: Request):
+    """GHTK/GHN status push: only queues the tracking number for an immediate re-check via the carrier API."""
+    if carrier not in CARRIER_PLATFORMS:
+        raise HTTPException(404)
+    raw = await request.body()
+    try:
+        body = json.loads(raw)
+    except ValueError:
+        body = {k: v[0] for k, v in parse_qs(raw.decode(errors="ignore")).items()}
+    tn = body.get("label_id") or body.get("OrderCode") or body.get("order_code")
+    if tn:
+        await state["redis"].sadd(TRACKER_POKE_KEY, str(tn))
+    return {"accepted": bool(tn)}
 
 
 @app.post("/webhooks/{platform}/{shop_id}", status_code=202)

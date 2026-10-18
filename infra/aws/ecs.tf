@@ -75,6 +75,7 @@ locals {
     api       = ["uvicorn", "orderhub.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
     collector = ["python", "-m", "orderhub.collector"]
     processor = ["python", "-m", "orderhub.processor"]
+    tracker   = ["python", "-m", "orderhub.tracker"]
   }
 }
 

@@ -67,3 +67,24 @@ Token được tự refresh và lưu lại (đã mã hoá).
 python -m venv .venv && .venv/bin/pip install -e '.[dev]'
 .venv/bin/pytest -q && .venv/bin/ruff check .
 ```
+
+## Pool tài khoản nền tảng
+
+Mỗi tài khoản (shop sàn, OMS hay hãng vận chuyển) là một dòng trong bảng `shops`, credentials được mã hoá.
+Tình trạng của từng tài khoản (`ok`, `retry`, `cooldown`, `error`, `disabled`) được lưu trong Redis (`pool:health:*`)
+để mọi replica dùng chung: lỗi liên tiếp sẽ tạm nghỉ 1, 2, 4… phút (tối đa 1 giờ), lỗi 5 lần liên tiếp thì chuyển
+sang `error`. Tài khoản vận chuyển được xoay vòng round-robin, và hệ thống nhớ tài khoản nào sở hữu mã vận đơn nào.
+
+| Nền tảng | Loại | Credentials | Ghi chú |
+| --- | --- | --- | --- |
+| Sapo | Lấy đơn | `{"store": "<alias>", "access_token": "..."}` hoặc `api_key` + `api_secret` | `/admin/orders.json` |
+| Nhanh.vn | Lấy đơn | `{"access_token", "business_id", "expires_at"}`, env `NHANH_APP_ID` | API v3, token 1 năm, không refresh |
+| Pancake POS | Lấy đơn | `{"api_key": "..."}` | `pos.pages.fm/api/v1` |
+| TPOS | Lấy đơn | `{"tenant", "username", "password"}` | **Thử nghiệm**: TPOS không có tài liệu API công khai |
+| GHTK | Vận chuyển | `{"token": "...", "partner_code": "..."}` | `/services/shipment/v2/{mã}` |
+| GHN | Vận chuyển | `{"token": "...", "shop_id": 123}` | `/v2/shipping-order/detail` |
+
+API (admin): `GET /api/accounts`, `POST /api/accounts`, `PATCH /api/accounts/{platform}/{id}?active=false`,
+`DELETE /api/accounts/{platform}/{id}`, `POST /api/accounts/{platform}/{id}/check` (kiểm tra đăng nhập thật).
+Service `tracker` cập nhật hành trình đơn GHTK/GHN; webhook `POST /webhooks/carrier/{ghtk|ghn}` kích hoạt kiểm tra
+ngay mã vận đơn đó (payload không được tin là dữ liệu, luôn hỏi lại API của hãng).

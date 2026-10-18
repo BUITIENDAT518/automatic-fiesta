@@ -56,3 +56,28 @@ class Connector(abc.ABC):
     @abc.abstractmethod
     def fetch_orders(self, since: datetime, until: datetime) -> AsyncIterator[NormalizedOrder]:
         """Yield every order created or updated in [since, until)."""
+
+
+def iso_to_dt(value: str | None) -> datetime:
+    """Parse ISO-8601 timestamps; naive values are treated as UTC."""
+    if not value:
+        return datetime.now(timezone.utc)
+    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+class StaticTokenConnector(Connector):
+    """Connectors authenticated by a long-lived API key/token stored in the account credentials."""
+
+    token_field = "access_token"
+
+    def token_expiring(self, margin_s: int = 600) -> bool:
+        return False
+
+    async def refresh_token(self) -> None:
+        raise ConnectorError(f"{self.shop.platform.value}: token hết hạn, cần cấp quyền lại")
+
+    def require(self, *fields: str) -> None:
+        missing = [f for f in fields if not self.creds.get(f)]
+        if missing:
+            raise ConnectorError(f"{self.shop.platform.value}: thiếu {', '.join(missing)} trong credentials")

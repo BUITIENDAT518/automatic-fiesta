@@ -18,6 +18,13 @@ MOCK_SHOPS = [
     (Platform.tiktok, "7494000002", "TikTok - Gia Dụng Tiện Ích"),
     (Platform.lazada, "200001", "Lazada - Điện Tử Số"),
     (Platform.lazada, "200002", "Lazada - Giày Dép Việt"),
+    (Platform.sapo, "dongho-24h", "Sapo - Đồng Hồ 24h"),
+    (Platform.tpos, "shop-me-be", "TPOS - Shop Mẹ & Bé"),
+    (Platform.nhanh, "185432", "Nhanh.vn - Nội Thất Gỗ"),
+    (Platform.pancake, "8812", "Pancake - Thời Trang Livestream"),
+    (Platform.ghtk, "ghtk-kho-hcm", "GHTK - Kho HCM"),
+    (Platform.ghtk, "ghtk-kho-hn", "GHTK - Kho Hà Nội"),
+    (Platform.ghn, "ghn-2510001", "GHN - Shop 2510001"),
 ]
 
 
