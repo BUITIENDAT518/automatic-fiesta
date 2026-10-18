@@ -22,7 +22,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px;bord
 th{color:var(--mut);font-weight:600;font-size:12px}tr.flash{animation:fl 2s}@keyframes fl{from{background:#24406f}to{background:transparent}}
 .tag{display:inline-block;padding:2px 7px;border-radius:10px;font-size:12px;background:#222838}
 .s-pending{color:var(--warn)}.s-ready_to_ship{color:#9fb7ff}.s-shipping{color:var(--acc)}.s-delivered{color:var(--ok)}.s-cancelled,.s-returned{color:var(--bad)}
-.p-sapo{background:#13331f;color:#5fd18b}.p-tpos{background:#33251a;color:#f0b26b}.p-nhanh{background:#14304a;color:#6cb8ff}.p-pancake{background:#3a1d33;color:#f28ad2}.p-ghtk{background:#123a2c;color:#3fd6a0}.p-haravan{background:#132a40;color:#5fb3ff}.p-jt{background:#3a1515;color:#ff6b6b}.p-ghn{background:#3b2a12;color:#ffb648}
+.p-sapo{background:#13331f;color:#5fd18b}.p-tpos{background:#33251a;color:#f0b26b}.p-nhanh{background:#14304a;color:#6cb8ff}.p-pancake{background:#3a1d33;color:#f28ad2}.p-ghtk{background:#123a2c;color:#3fd6a0}.p-haravan{background:#132a40;color:#5fb3ff}.p-jt{background:#3a1515;color:#ff6b6b}.p-viettelpost{background:#3a2a10;color:#ffc04d}.p-vnpost{background:#10303a;color:#4dd2ff}.p-ghn{background:#3b2a12;color:#ffb648}
 .h-ok{color:var(--ok)}.h-new{color:var(--mut)}.h-retry,.h-cooldown{color:var(--warn)}.h-error,.h-disabled{color:var(--bad)}
 textarea{background:#10141b;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:7px 9px;font:12px monospace}
 .p-shopee{background:#4a2414;color:#ff8a5c}.p-tiktok{background:#1d2b33;color:#5ee6e6}.p-lazada{background:#1d2148;color:#8d9bff}
@@ -47,6 +47,18 @@ dialog{background:var(--card);color:var(--txt);border:1px solid var(--line);bord
   <button onclick="logout()">Đăng xuất</button>
 </header>
 <main>
+  <div class="card">
+    <h3>Pool tài khoản nền tảng <span class="mut" id="pool-sum"></span></h3>
+    <div class="filters" id="pool-add" hidden>
+      <select id="a-platform" onchange="renderFields()"></select><input id="a-id" placeholder="Mã shop / tài khoản"><input id="a-name" placeholder="Tên hiển thị">
+      <span id="a-fields" class="filters"></span>
+      <button class="primary" onclick="addAccount()">Thêm tài khoản</button>
+      <span class="mut">hoặc</span><input type="file" id="a-file" accept=".csv,.xlsx,.json"><button onclick="importFile()">Nhập file</button>
+      <span class="mut" id="a-msg"></span>
+    </div>
+    <table><thead><tr><th>Nền tảng</th><th>Tài khoản</th><th>Loại</th><th>Tình trạng</th><th>OK lần cuối</th><th>Lỗi gần nhất</th><th>Worker</th><th></th></tr></thead>
+    <tbody id="pool"></tbody></table>
+  </div>
   <div class="row kpis">
     <div class="card"><h3>Tổng đơn</h3><div class="kpi" id="k-orders">-</div></div>
     <div class="card"><h3>Doanh thu</h3><div class="kpi" id="k-rev">-</div></div>
@@ -59,16 +71,6 @@ dialog{background:var(--card);color:var(--txt);border:1px solid var(--line);bord
     <div class="card"><h3>Trạng thái</h3><div id="by-status"></div><h3 style="margin-top:14px">Đơn vị vận chuyển</h3><div id="by-carrier"></div></div>
   </div>
   <div class="card"><h3>Đơn theo giờ</h3><div id="hourly"></div></div>
-  <div class="card">
-    <h3>Pool tài khoản nền tảng <span class="mut" id="pool-sum"></span></h3>
-    <div class="filters" id="pool-add" hidden>
-      <select id="a-platform"></select><input id="a-id" placeholder="Mã shop / tài khoản"><input id="a-name" placeholder="Tên hiển thị">
-      <textarea id="a-creds" rows="1" cols="46" placeholder='Credentials JSON, vd {"api_key":"..."}'></textarea>
-      <button class="primary" onclick="addAccount()">Thêm tài khoản</button><span class="mut" id="a-msg"></span>
-    </div>
-    <table><thead><tr><th>Nền tảng</th><th>Tài khoản</th><th>Loại</th><th>Tình trạng</th><th>OK lần cuối</th><th>Lỗi gần nhất</th><th>Worker</th><th></th></tr></thead>
-    <tbody id="pool"></tbody></table>
-  </div>
   <div class="card">
     <div class="filters">
       <select id="f-platform"><option value="">Tất cả sàn</option></select>
@@ -89,7 +91,7 @@ dialog{background:var(--card);color:var(--txt);border:1px solid var(--line);bord
 <dialog id="detail"><pre id="detail-body" style="white-space:pre-wrap"></pre><button onclick="detail.close()">Đóng</button></dialog>
 <script>
 const ST={pending:"Chờ xử lý",ready_to_ship:"Chờ lấy hàng",shipping:"Đang giao",delivered:"Đã giao",cancelled:"Đã hủy",returned:"Hoàn hàng",unknown:"Không rõ"};
-const PL={shopee:"Shopee",tiktok:"TikTok Shop",lazada:"Lazada",sapo:"Sapo",tpos:"TPOS",nhanh:"Nhanh.vn",pancake:"Pancake",haravan:"Haravan",ghtk:"GHTK",ghn:"GHN",jt:"J&T Express"};
+const PL={shopee:"Shopee",tiktok:"TikTok Shop",lazada:"Lazada",sapo:"Sapo",tpos:"TPOS",nhanh:"Nhanh.vn",pancake:"Pancake",haravan:"Haravan",ghtk:"GHTK",ghn:"GHN",jt:"J&T Express",viettelpost:"Viettel Post",vnpost:"VNPost"};
 const HS={ok:"Hoạt động",new:"Chưa chạy",retry:"Thử lại",cooldown:"Tạm nghỉ",error:"Lỗi",disabled:"Đã tắt"};
 let ROLE="viewer";
 const $=id=>document.getElementById(id);const vnd=n=>new Intl.NumberFormat("vi-VN").format(Math.round(n))+"₫";
@@ -111,9 +113,21 @@ async function loadPool(){const list=await api("/api/accounts");const cnt={};lis
 async function checkAcc(k,kind){let q="";if(kind=="carrier"){const tn=prompt("Nhập một mã vận đơn để kiểm tra tài khoản vận chuyển:");if(!tn)return;q="?tracking_number="+encodeURIComponent(tn)}
   try{const d=await send("POST",`/api/accounts/${k.map(encodeURIComponent).join("/")}/check${q}`);alert(d.ok?"OK: "+JSON.stringify(d.detail):"Lỗi: "+d.error)}catch(e){alert("Lỗi: "+e.message)}loadPool()}
 async function toggleAcc(k,active){await send("PATCH",`/api/accounts/${k.map(encodeURIComponent).join("/")}?active=${active}`);loadPool()}
-async function addAccount(){try{const creds=$("a-creds").value.trim()?JSON.parse($("a-creds").value):{};
+const SECRET=new Set(["password","token","access_token","api_key","private_key","refresh_token","api_secret"]);
+const FIELDS={tpos:[["tenant","Link TPOS"],["username","Tài khoản"],["password","Mật khẩu"]],sapo:[["store","Tên store (xxx.mysapo.net)"],["access_token","Access token"]],
+  haravan:[["access_token","Private app token"]],nhanh:[["business_id","Business ID"],["access_token","Access token"]],pancake:[["api_key","API key"]],
+  ghtk:[["token","Token"],["partner_code","Partner code (nếu có)"]],ghn:[["token","Token"],["shop_id","ShopId GHN"]],
+  jt:[["api_account","apiAccount"],["private_key","privateKey"],["customer_code","Mã khách hàng"],["password","Mật khẩu"]],
+  viettelpost:[["username","Tài khoản"],["password","Mật khẩu"]],vnpost:[["username","Tài khoản"],["password","Mật khẩu"]],
+  shopee:[["refresh_token","Refresh token"]],tiktok:[["refresh_token","Refresh token"]],lazada:[["refresh_token","Refresh token"]]};
+function renderFields(){$("a-fields").innerHTML=(FIELDS[$("a-platform").value]||[]).map(([k,l])=>`<input data-k="${k}" type="${SECRET.has(k)?"password":"text"}" placeholder="${l}">`).join("")}
+async function importFile(){const f=$("a-file").files[0];if(!f){$("a-msg").textContent="Chọn file trước";return}
+  const r=await fetch("/api/accounts/import?filename="+encodeURIComponent(f.name),{method:"POST",headers:{"X-API-Key":KEY},body:f});const d=await r.json();
+  if(!r.ok){$("a-msg").textContent="Lỗi: "+JSON.stringify(d.detail);return}
+  const bad=d.rows.filter(x=>x.error);$("a-msg").textContent=`Đã nạp ${d.imported}/${d.rows.length} dòng`+(bad.length?" · lỗi: "+bad.map(x=>`#${x.row} ${x.error}`).join("; "):"");$("a-file").value="";loadPool()}
+async function addAccount(){try{const creds={};$("a-fields").querySelectorAll("input").forEach(i=>{if(i.value.trim())creds[i.dataset.k]=i.value.trim()});
   await send("POST","/api/accounts",{platform:$("a-platform").value,shop_id:$("a-id").value.trim(),name:$("a-name").value.trim()||$("a-id").value.trim(),credentials:creds});
-  $("a-msg").textContent="Đã thêm";["a-id","a-name","a-creds"].forEach(i=>$(i).value="");loadPool()}catch(e){$("a-msg").textContent="Lỗi: "+e.message}}
+  $("a-msg").textContent="Đã thêm";["a-id","a-name"].forEach(i=>$(i).value="");renderFields();loadPool()}catch(e){$("a-msg").textContent="Lỗi: "+e.message}}
 function saveKey(){KEY=$("key").value.trim();localStorage.setItem("orderhub_key",KEY);boot()}
 function logout(){localStorage.removeItem("orderhub_key");location.reload()}
 function qs(){const p=new URLSearchParams({hours:$("hours").value});filterIds.forEach(f=>{const v=$("f-"+f).value;if(v)p.set(f,v)});const q=$("f-q").value.trim();if(q)p.set("q",q);return p}
@@ -148,7 +162,7 @@ async function boot(){if(!KEY){$("login").hidden=false;return}let m;try{m=await 
   $("login").hidden=true;$("app").hidden=false;ROLE=m.role;$("pool-add").hidden=m.role!="admin";
   $("role").textContent=m.role=="admin"?"Quyền: admin (đầy đủ PII)":"Quyền: viewer (che PII)";$("hours").value=m.window_hours;
   const add=(id,vals,lab=x=>x)=>vals.forEach(v=>$(id).insertAdjacentHTML("beforeend",`<option value="${v}">${lab(v)}</option>`));
-  add("f-platform",m.platforms,k=>PL[k]);add("a-platform",[...m.platforms,...m.carrier_platforms],k=>PL[k]);add("f-region",m.regions);add("f-province",m.provinces);add("f-status",m.statuses,k=>ST[k]);
+  add("f-platform",m.platforms,k=>PL[k]);add("a-platform",[...m.platforms,...m.carrier_platforms],k=>PL[k]);renderFields();add("f-region",m.regions);add("f-province",m.provinces);add("f-status",m.statuses,k=>ST[k]);
   const shops=await api("/api/shops");add("f-shop_id",shops.map(s=>s.shop_id),id=>(shops.find(s=>s.shop_id==id)||{}).name);
   [...filterIds.map(f=>"f-"+f),"hours"].forEach(id=>$(id).onchange=reload);$("f-q").oninput=debounced;reload();connect();loadPool();setInterval(loadPool,15000)}
 boot();
