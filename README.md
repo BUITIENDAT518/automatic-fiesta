@@ -26,6 +26,17 @@ docker compose up -d --build
 # Dashboard: http://localhost:8000  (key: viewer-dev-key hoặc admin-dev-key)
 ```
 
+## Triển khai AWS (ap-southeast-1)
+
+Terraform trong `infra/aws` tạo: VPC, ECR, ECS Fargate (api/collector/processor, mỗi loại 2 replica), RDS PostgreSQL 16 (mã hoá, backup 7 ngày), ElastiCache Redis 7 (TLS), ALB (WebSocket, HTTPS nếu có `certificate_arn`), Secrets Manager (DB URL, `PII_KEY`, API key sinh ngẫu nhiên) và CloudWatch Logs.
+
+```bash
+export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...
+infra/aws/deploy.sh            # build + push image, terraform apply
+```
+
+API key của dashboard nằm trong secret `orderhub/app`; key/secret của sàn điền vào secret `orderhub/marketplaces`.
+
 ## Kết nối shop thật
 
 1. Điền app key/secret của từng sàn vào `.env` (`SHOPEE_PARTNER_*`, `TIKTOK_APP_*`, `LAZADA_APP_*`), đặt `SEED_MOCK_SHOPS=false`, đổi `API_KEY_*`.
