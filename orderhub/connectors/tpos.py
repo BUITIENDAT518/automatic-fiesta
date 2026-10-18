@@ -1,8 +1,9 @@
 """TPOS (tpos.vn) connector — EXPERIMENTAL.
 
 TPOS has no public API docs. Login uses the OAuth password grant that the TPOS web app uses
-(POST https://<tenant>.tpos.vn/token); orders come from the OData FastSaleOrder set. Field names below must be
-confirmed against a real account before production use.
+(POST https://<tenant>.tpos.vn/token, client_id=tmtWebApp); orders come from the same OData view the web app's
+invoice grid uses (/odata/FastSaleOrder/ODataService.GetView, Type eq 'invoice'). Field names are taken from the
+public TPOS web bundle and still need confirming against a real account.
 Credentials: {"tenant": "<subdomain>", "username": "...", "password": "..."}.
 """
 
@@ -40,12 +41,14 @@ class TposConnector(Connector):
                           expires_at=int(time.time()) + int(data.get("expires_in") or 3600))
 
     async def fetch_orders(self, since: datetime, until: datetime) -> AsyncIterator[NormalizedOrder]:
-        url = f"{self.host}/odata/FastSaleOrder"
-        flt = f"LastUpdated ge {since.strftime('%Y-%m-%dT%H:%M:%SZ')} and LastUpdated lt {until.strftime('%Y-%m-%dT%H:%M:%SZ')}"
+        url = f"{self.host}/odata/FastSaleOrder/ODataService.GetView"
+        lo, hi = (d.strftime("%Y-%m-%dT%H:%M:%SZ") for d in (since, until))
+        flt = (f"Type eq 'invoice' and ((DateCreated ge {lo} and DateCreated lt {hi}) or "
+               f"(ShipStatusLastUpdated ge {lo} and ShipStatusLastUpdated lt {hi}))")
         skip = 0
         while True:
             resp = await self.http.get(url, params={"$filter": flt, "$top": PAGE_SIZE, "$skip": skip,
-                                                    "$orderby": "LastUpdated"},
+                                                    "$orderby": "DateCreated"},
                                        headers={"Authorization": f"Bearer {self.creds['access_token']}"})
             if resp.status_code != 200:
                 raise ConnectorError(f"tpos: HTTP {resp.status_code} {resp.text[:200]}")
@@ -63,13 +66,15 @@ class TposConnector(Connector):
             order_id=str(raw.get("Number") or raw["Id"]), status=STATE.get(state, OrderStatus.unknown),
             raw_status=raw.get("ShowState") or state,
             created_at=iso_to_dt(raw.get("DateInvoice") or raw.get("DateCreated")),
-            updated_at=iso_to_dt(raw.get("LastUpdated") or raw.get("DateInvoice")),
+            updated_at=max(iso_to_dt(raw.get("DateCreated") or raw.get("DateInvoice")),
+                           iso_to_dt(raw.get("ShipStatusLastUpdated") or raw.get("DateCreated"))),
             total_amount=Decimal(str(raw.get("AmountTotal") or 0)),
             customer=Customer(id=str(raw.get("PartnerId") or "") or None, name=raw.get("PartnerDisplayName"),
                               phone=raw.get("Phone")),
             shipping=Shipping(recipient_name=raw.get("ReceiverName") or raw.get("PartnerDisplayName"),
                               phone=raw.get("ReceiverPhone") or raw.get("Phone"),
                               address=raw.get("ReceiverAddress") or raw.get("Address"),
+                              ward=raw.get("WardName"), district=raw.get("DistrictName"), province=raw.get("CityName"),
                               carrier=raw.get("CarrierName"), tracking_number=raw.get("TrackingRef"),
-                              logistics_status=raw.get("ShipStatus")),
+                              logistics_status=raw.get("ShowShipStatus") or raw.get("ShipStatus")),
         )
