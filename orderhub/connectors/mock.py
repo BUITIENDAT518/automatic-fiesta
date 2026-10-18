@@ -91,7 +91,7 @@ class MockConnector(Connector):
         rng = self._rng()
         state = _STATE.setdefault(self.shop.key, {})
         now = datetime.now(timezone.utc)
-        if not state:
+        if not state and until - since > timedelta(hours=1):
             n = rng.randint(120, 220)
             for _ in range(n):
                 created = until - timedelta(seconds=rng.uniform(0, (until - since).total_seconds()))
