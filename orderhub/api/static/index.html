@@ -145,10 +145,10 @@ function connect(){const ws=new WebSocket((location.protocol=="https:"?"wss://":
   ws.onclose=()=>{$("dot").classList.remove("on");$("livetxt").textContent="Mất kết nối, đang thử lại…";setTimeout(connect,3000)};
   ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.event=="created"){newCount++;$("k-new").textContent=newCount}if(offset==0)debounced()}}
 async function boot(){if(!KEY){$("login").hidden=false;return}let m;try{m=await api("/api/meta")}catch(e){return}
-  $("login").hidden=true;$("app").hidden=false;ROLE=m.role;$("pool-add").hidden=m.role!="admin";add("a-platform",[...m.platforms,...m.carrier_platforms],k=>PL[k]);
+  $("login").hidden=true;$("app").hidden=false;ROLE=m.role;$("pool-add").hidden=m.role!="admin";
   $("role").textContent=m.role=="admin"?"Quyền: admin (đầy đủ PII)":"Quyền: viewer (che PII)";$("hours").value=m.window_hours;
   const add=(id,vals,lab=x=>x)=>vals.forEach(v=>$(id).insertAdjacentHTML("beforeend",`<option value="${v}">${lab(v)}</option>`));
-  add("f-platform",m.platforms,k=>PL[k]);add("f-region",m.regions);add("f-province",m.provinces);add("f-status",m.statuses,k=>ST[k]);
+  add("f-platform",m.platforms,k=>PL[k]);add("a-platform",[...m.platforms,...m.carrier_platforms],k=>PL[k]);add("f-region",m.regions);add("f-province",m.provinces);add("f-status",m.statuses,k=>ST[k]);
   const shops=await api("/api/shops");add("f-shop_id",shops.map(s=>s.shop_id),id=>(shops.find(s=>s.shop_id==id)||{}).name);
   [...filterIds.map(f=>"f-"+f),"hours"].forEach(id=>$(id).onchange=reload);$("f-q").oninput=debounced;reload();connect();loadPool();setInterval(loadPool,15000)}
 boot();
