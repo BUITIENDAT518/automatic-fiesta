@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import collections
 import logging
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -17,6 +18,7 @@ from orderhub import accounts, bus
 from orderhub.config import get_settings
 from orderhub.importer import TEMPLATE_CSV, parse_file
 from orderhub.pool import AccountPool
+from orderhub.report import build_daily
 from orderhub.runtime import open_db, setup_logging, stop_event
 
 log = logging.getLogger("orderhub.telegram")
@@ -27,7 +29,7 @@ HELP = (
     "- Nền tảng lấy từ cột 'platform', tên sheet hoặc tên file (vd ghtk.xlsx, nhanh_vn.csv).\n"
     "- Cột được nhận dạng tự động: shop_id, name, username, password, token, tenant, store, business_id…\n"
     "- Tin nhắn chứa file sẽ bị xoá ngay sau khi nạp.\n"
-    "Lệnh: /mau (file mẫu), /pool (tình trạng pool)."
+    "Lệnh: /mau (file mẫu), /pool (tình trạng pool), /baocao (báo cáo đơn 24h)."
 )
 
 
@@ -57,7 +59,7 @@ class Bot:
             await self.call("sendMessage", chat_id=chat_id, text=text[i:i + 4000])
 
     async def send_file(self, chat_id: int, filename: str, content: bytes, caption: str = "") -> None:
-        await self.http.post(f"{self.base}/sendDocument", data={"chat_id": str(chat_id), "caption": caption},
+        await self.http.post(f"{self.base}/sendDocument", data={"chat_id": str(chat_id), "caption": caption[:1024]},
                              files={"document": (filename, content)}, timeout=60)
 
 
@@ -119,6 +121,12 @@ async def pool_summary(db, pool: AccountPool) -> str:
     return "\n".join(f"{p}: " + ", ".join(f"{k} {v}" for k, v in c.most_common()) for p, c in sorted(counts.items()))
 
 
+async def send_report(bot: Bot, chat_id: int, settings, db, hours: int = 24) -> None:
+    text, csv_bytes = await build_daily(db, settings, hours, reveal_pii=True)
+    stamp = datetime.now(timezone.utc).astimezone().strftime("%Y%m%d")
+    await bot.send_file(chat_id, f"don-hang-{stamp}.csv", csv_bytes, caption=text)
+
+
 async def handle_update(update: dict, bot: Bot, settings, db, pool: AccountPool, r, admins: set[int]) -> None:
     msg = update.get("message") or {}
     if not msg:
@@ -133,6 +141,8 @@ async def handle_update(update: dict, bot: Bot, settings, db, pool: AccountPool,
         await bot.send(chat_id, await import_document(bot, msg, settings, db, pool, r))
     elif text.startswith("/pool"):
         await bot.send(chat_id, await pool_summary(db, pool))
+    elif text.startswith("/baocao"):
+        await send_report(bot, chat_id, settings, db)
     elif text.startswith("/mau"):
         await bot.send_file(chat_id, "mau_tai_khoan.csv", TEMPLATE_CSV.encode(), "File mẫu: mỗi dòng một tài khoản.")
     else:
@@ -153,8 +163,32 @@ async def main() -> None:
     pool = AccountPool(r)
     lease = bus.Lease(r, settings.worker_id, ttl_ms=120_000)
     log.info("telegram bot %s started (%d admins)", settings.worker_id, len(admins))
+    async def digest_loop(bot: Bot) -> None:
+        while not stop.is_set():
+            now = datetime.now(timezone.utc).astimezone()
+            nxt = now.replace(hour=settings.digest_hour_local % 24, minute=0, second=0, microsecond=0)
+            if nxt <= now:
+                nxt += timedelta(days=1)
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=(nxt - now).total_seconds())
+                return
+            except asyncio.TimeoutError:
+                pass
+            if not await lease.acquire("telegram"):
+                continue
+            stamp = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d")
+            if await r.get("telegram:digest") == stamp:
+                continue
+            await r.set("telegram:digest", stamp)
+            for chat_id in admins:
+                try:
+                    await send_report(bot, chat_id, settings, db)
+                except Exception:
+                    log.exception("digest to %s failed", chat_id)
+
     async with httpx.AsyncClient() as http:
         bot = Bot(settings.telegram_bot_token, http)
+        digest_task = asyncio.create_task(digest_loop(bot))
         while not stop.is_set():
             if not await lease.acquire("telegram"):
                 await asyncio.sleep(5)
@@ -173,6 +207,7 @@ async def main() -> None:
                 except Exception:
                     log.exception("update %s failed", upd.get("update_id"))
         await lease.release("telegram")
+        digest_task.cancel()
     await db.close()
     await r.aclose()
 

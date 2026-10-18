@@ -4,11 +4,12 @@ import asyncio
 import contextlib
 import json
 import secrets
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qs
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from orderhub import accounts, bus
 from orderhub.collector.__main__ import POKE_KEY
@@ -17,6 +18,7 @@ from orderhub.importer import parse_file
 from orderhub.models import CARRIER_PLATFORMS, ORDER_PLATFORMS, OrderStatus, Platform, Shop
 from orderhub.pool import AccountPool
 from orderhub.regions import BAC, NAM, PROVINCES_2025, TRUNG
+from orderhub.report import rows_to_csv
 from orderhub.runtime import open_db
 from orderhub.tracker.__main__ import POKE_KEY as TRACKER_POKE_KEY
 
@@ -107,6 +109,21 @@ async def get_order(platform: str, shop_id: str, order_id: str, role: str = Depe
     if not row:
         raise HTTPException(404, "order not found")
     return row
+
+
+@app.get("/api/orders.csv")
+async def export_orders_csv(
+    role: str = Depends(require_role), hours: int = Query(default=None, ge=1, le=24 * 30),
+    platform: str | None = None, shop_id: str | None = None, region: str | None = None,
+    province: str | None = None, status: str | None = None, carrier: str | None = None, q: str | None = None,
+):
+    _, rows = await state["db"].query_orders(
+        hours or settings.window_hours, _filters(platform, shop_id, region, province, status, carrier),
+        q, limit=100_000, offset=0, reveal_pii=role == "admin",
+    )
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
+    return Response(rows_to_csv(rows), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="orders-{stamp}.csv"'})
 
 
 @app.get("/api/stats")

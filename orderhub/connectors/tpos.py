@@ -1,3 +1,4 @@
+
 """TPOS (tpos.vn) connector — EXPERIMENTAL.
 
 TPOS has no public API docs. Login uses the OAuth password grant that the TPOS web app uses

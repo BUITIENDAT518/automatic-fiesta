@@ -98,3 +98,22 @@ async def test_bot_rejects_non_admin():
                         bot, Settings(), None, None, None, admin_ids("1, 2"))
     assert "42" in bot.sent[0][1] and "quyền" in bot.sent[0][1]
     assert admin_ids("1;2, x,-100") == {1, 2, -100}
+
+
+def test_report_csv_and_digest():
+    from orderhub.report import digest_text, rows_to_csv
+    rows = [{"created_at": "2026-10-18T01:00:00+00:00", "updated_at": "2026-10-18T02:00:00+00:00",
+             "platform": "shopee", "shop_name": "Shop A", "order_id": "X1", "status": "delivered",
+             "raw_status": "COMPLETED", "total_amount": 120000.0, "currency": "VND",
+             "customer": {"name": "Nguyễn A", "phone": "0900000000"},
+             "shipping": {"recipient_name": "Nguyễn A", "address": "1 Lê Lợi", "province": "Hồ Chí Minh",
+                          "region": "Nam", "carrier": "GHTK", "tracking_number": "S1.1",
+                          "logistics_status": "Đã giao"},
+             "items": [{"name": "Áo", "quantity": 2}]}]
+    csv_text = rows_to_csv(rows)
+    assert csv_text.startswith("\ufeff") and "order_id" in csv_text.splitlines()[0]
+    assert "Áo x2" in csv_text and "Hồ Chí Minh" in csv_text
+    txt = digest_text({"orders": 10, "revenue": 1000000, "by_platform": [{"key": "shopee", "orders": 10}],
+                       "by_region": [{"key": "Nam", "orders": 10}],
+                       "by_status": [{"key": "delivered", "orders": 7}]}, 24)
+    assert "Tổng đơn: 10" in txt and "Đã giao: 7" in txt and "shopee" in txt
