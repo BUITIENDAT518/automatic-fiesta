@@ -1,0 +1,42 @@
+x-app: &app
+  build: .
+  env_file: [.env]
+  environment:
+    DATABASE_URL: postgresql://orderhub:orderhub@postgres:5432/orderhub
+    REDIS_URL: redis://redis:6379/0
+  depends_on:
+    postgres: {condition: service_healthy}
+    redis: {condition: service_healthy}
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment: {POSTGRES_USER: orderhub, POSTGRES_PASSWORD: orderhub, POSTGRES_DB: orderhub}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: {test: ["CMD-SHELL", "pg_isready -U orderhub"], interval: 3s, retries: 20}
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redisdata:/data]
+    healthcheck: {test: ["CMD", "redis-cli", "ping"], interval: 3s, retries: 20}
+
+  collector:
+    <<: *app
+    command: ["python", "-m", "orderhub.collector"]
+    deploy: {replicas: 2}
+
+  processor:
+    <<: *app
+    command: ["python", "-m", "orderhub.processor"]
+    deploy: {replicas: 2}
+
+  api:
+    <<: *app
+    command: ["uvicorn", "orderhub.api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+    ports: ["8000:8000"]
+
+volumes:
+  pgdata:
+  redisdata:
