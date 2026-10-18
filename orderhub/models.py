@@ -15,13 +15,15 @@ class Platform(str, Enum):
     tpos = "tpos"
     nhanh = "nhanh"
     pancake = "pancake"
+    haravan = "haravan"
     ghtk = "ghtk"
     ghn = "ghn"
+    jt = "jt"
 
 
 ORDER_PLATFORMS = frozenset({Platform.shopee, Platform.tiktok, Platform.lazada, Platform.sapo, Platform.tpos,
-                             Platform.nhanh, Platform.pancake})
-CARRIER_PLATFORMS = frozenset({Platform.ghtk, Platform.ghn})
+                             Platform.nhanh, Platform.pancake, Platform.haravan})
+CARRIER_PLATFORMS = frozenset({Platform.ghtk, Platform.ghn, Platform.jt})
 
 
 class OrderStatus(str, Enum):

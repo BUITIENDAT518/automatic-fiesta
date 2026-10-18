@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import abc
+import base64
+import hashlib
+import json
 import random
+import time
 
 import httpx
 from pydantic import BaseModel
@@ -30,6 +34,7 @@ class TrackingResult(BaseModel):
 CARRIER_ALIASES = {
     Platform.ghtk: ("ghtk", "giao hàng tiết kiệm", "giao hang tiet kiem", "giaohangtietkiem"),
     Platform.ghn: ("ghn", "giao hàng nhanh", "giao hang nhanh", "giaohangnhanh"),
+    Platform.jt: ("j&t", "j & t", "jt express", "jtexpress"),
 }
 
 
@@ -92,13 +97,55 @@ class GhnClient(CarrierClient):
                               logistics_status=GHN_TEXT.get(st, st))
 
 
+JT_STATUS = {106: OrderStatus.shipping, 109: OrderStatus.shipping, 110: OrderStatus.shipping,
+             112: OrderStatus.shipping, 113: OrderStatus.delivered, 116: OrderStatus.returned,
+             117: OrderStatus.returned, 118: OrderStatus.shipping, 120: OrderStatus.returned}
+
+
+def jt_digest(text: str, secret: str) -> str:
+    return base64.b64encode(hashlib.md5((text + secret).encode()).digest()).decode()
+
+
+def jt_password_cipher(password: str) -> str:
+    return hashlib.md5((password + "jadada236t2").encode()).hexdigest().upper()
+
+
+class JtClient(CarrierClient):
+    """J&T Express VN open platform: POST /logistics/trace (https://open.jtexpress.vn/#/apiDoc/logistics/query).
+
+    Credentials: {"api_account", "private_key", "customer_code", "password"}. Headers carry apiAccount, a
+    millisecond timestamp and digest = base64(md5(bizContent + privateKey)).
+    """
+
+    async def track(self, tracking_number: str) -> TrackingResult:
+        c = self.creds
+        biz = json.dumps({"billCodes": tracking_number, "txlogisticId": "", "customerCode": c.get("customer_code", ""),
+                          "password": c.get("password_cipher") or jt_password_cipher(c.get("password", ""))},
+                         separators=(",", ":"))
+        headers = {"apiAccount": str(c.get("api_account", "")), "timestamp": str(int(time.time() * 1000)),
+                   "digest": jt_digest(biz, c.get("private_key", ""))}
+        resp = await self.http.post(f"{self.settings.jt_host}/logistics/trace", headers=headers,
+                                    data={"bizContent": biz})
+        data = resp.json()
+        if str(data.get("code")) != "1":
+            raise CarrierError(f"j&t: {data.get('code')} {data.get('msg')}")
+        bills = data.get("data") or []
+        details = (bills[0].get("details") if bills else None) or []
+        if not details:
+            raise NotFound(f"j&t: không có hành trình cho {tracking_number}")
+        last = max(details, key=lambda d: d.get("scanTime") or "")
+        code = int(last.get("scanTypeCode") or 0)
+        return TrackingResult(tracking_number=tracking_number, status=JT_STATUS.get(code, OrderStatus.unknown),
+                              logistics_status=last.get("scanTypeName") or last.get("desc") or str(code))
+
+
 class MockCarrierClient(CarrierClient):
     async def track(self, tracking_number: str) -> TrackingResult:
         st = random.choice(["transporting", "delivering", "delivered", "delivered", "delivery_fail"])
         return TrackingResult(tracking_number=tracking_number, status=GHN[st], logistics_status=GHN_TEXT[st])
 
 
-CLIENTS: dict[Platform, type[CarrierClient]] = {Platform.ghtk: GhtkClient, Platform.ghn: GhnClient}
+CLIENTS: dict[Platform, type[CarrierClient]] = {Platform.ghtk: GhtkClient, Platform.ghn: GhnClient, Platform.jt: JtClient}
 
 
 def build_carrier(account: Shop, settings: Settings, http: httpx.AsyncClient) -> CarrierClient:

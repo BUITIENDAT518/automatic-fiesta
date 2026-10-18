@@ -40,6 +40,8 @@ class Settings:
     pancake_host: str = field(default_factory=lambda: _env("PANCAKE_HOST", "https://pos.pages.fm/api/v1"))
     ghtk_host: str = field(default_factory=lambda: _env("GHTK_HOST", "https://services.giaohangtietkiem.vn"))
     ghn_host: str = field(default_factory=lambda: _env("GHN_HOST", "https://online-gateway.ghn.vn/shiip/public-api"))
+    haravan_host: str = field(default_factory=lambda: _env("HARAVAN_HOST", "https://apis.haravan.com"))
+    jt_host: str = field(default_factory=lambda: _env("JT_HOST", "https://ylopenapi.jtexpress.vn/webopenplatformapi/api"))
     track_interval_s: int = field(default_factory=lambda: int(_env("TRACK_INTERVAL_S", "300")))
 
 

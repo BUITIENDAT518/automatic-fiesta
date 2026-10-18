@@ -22,7 +22,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px;bord
 th{color:var(--mut);font-weight:600;font-size:12px}tr.flash{animation:fl 2s}@keyframes fl{from{background:#24406f}to{background:transparent}}
 .tag{display:inline-block;padding:2px 7px;border-radius:10px;font-size:12px;background:#222838}
 .s-pending{color:var(--warn)}.s-ready_to_ship{color:#9fb7ff}.s-shipping{color:var(--acc)}.s-delivered{color:var(--ok)}.s-cancelled,.s-returned{color:var(--bad)}
-.p-sapo{background:#13331f;color:#5fd18b}.p-tpos{background:#33251a;color:#f0b26b}.p-nhanh{background:#14304a;color:#6cb8ff}.p-pancake{background:#3a1d33;color:#f28ad2}.p-ghtk{background:#123a2c;color:#3fd6a0}.p-ghn{background:#3b2a12;color:#ffb648}
+.p-sapo{background:#13331f;color:#5fd18b}.p-tpos{background:#33251a;color:#f0b26b}.p-nhanh{background:#14304a;color:#6cb8ff}.p-pancake{background:#3a1d33;color:#f28ad2}.p-ghtk{background:#123a2c;color:#3fd6a0}.p-haravan{background:#132a40;color:#5fb3ff}.p-jt{background:#3a1515;color:#ff6b6b}.p-ghn{background:#3b2a12;color:#ffb648}
 .h-ok{color:var(--ok)}.h-new{color:var(--mut)}.h-retry,.h-cooldown{color:var(--warn)}.h-error,.h-disabled{color:var(--bad)}
 textarea{background:#10141b;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:7px 9px;font:12px monospace}
 .p-shopee{background:#4a2414;color:#ff8a5c}.p-tiktok{background:#1d2b33;color:#5ee6e6}.p-lazada{background:#1d2148;color:#8d9bff}
@@ -89,7 +89,7 @@ dialog{background:var(--card);color:var(--txt);border:1px solid var(--line);bord
 <dialog id="detail"><pre id="detail-body" style="white-space:pre-wrap"></pre><button onclick="detail.close()">Đóng</button></dialog>
 <script>
 const ST={pending:"Chờ xử lý",ready_to_ship:"Chờ lấy hàng",shipping:"Đang giao",delivered:"Đã giao",cancelled:"Đã hủy",returned:"Hoàn hàng",unknown:"Không rõ"};
-const PL={shopee:"Shopee",tiktok:"TikTok Shop",lazada:"Lazada",sapo:"Sapo",tpos:"TPOS",nhanh:"Nhanh.vn",pancake:"Pancake",ghtk:"GHTK",ghn:"GHN"};
+const PL={shopee:"Shopee",tiktok:"TikTok Shop",lazada:"Lazada",sapo:"Sapo",tpos:"TPOS",nhanh:"Nhanh.vn",pancake:"Pancake",haravan:"Haravan",ghtk:"GHTK",ghn:"GHN",jt:"J&T Express"};
 const HS={ok:"Hoạt động",new:"Chưa chạy",retry:"Thử lại",cooldown:"Tạm nghỉ",error:"Lỗi",disabled:"Đã tắt"};
 let ROLE="viewer";
 const $=id=>document.getElementById(id);const vnd=n=>new Intl.NumberFormat("vi-VN").format(Math.round(n))+"₫";

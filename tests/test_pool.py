@@ -71,7 +71,6 @@ def test_carrier_aliases():
     assert carrier_platform("Giao Hàng Tiết Kiệm") == Platform.ghtk
     assert carrier_platform("GHN Express") == Platform.ghn
     assert carrier_platform("Giao Hàng Nhanh") == Platform.ghn
-    assert carrier_platform("J&T Express") is None
 
 
 def _client(handler):
@@ -158,3 +157,41 @@ def test_tpos_tenant_from_url():
     assert tenant_from("phuongproshop.tpos.vn") == "phuongproshop"
     assert tenant_from("phuongproshop") == "phuongproshop"
     assert tenant_from("") is None
+
+
+def test_haravan_normalize():
+    from orderhub.connectors.haravan import HaravanConnector
+    raw = {"id": 5, "name": "#1005", "confirmed_status": "confirmed", "fulfillment_status": "fulfilled",
+           "created_at": "2026-10-17T03:00:00.000Z", "updated_at": "2026-10-17T06:00:00.000Z", "total_price": 120000,
+           "customer": {"id": 9, "first_name": "Haravan Demo", "phone": "0901234567"},
+           "shipping_address": {"name": "Haravan Demo", "address1": "182 Lê Đại Hành", "ward": "Phường 15",
+                                "district": "Quận 11", "province": "Hồ Chí Minh"},
+           "fulfillments": [{"tracking_number": "403943", "tracking_company": "GHN",
+                             "carrier_status_code": "delivered", "carrier_status_name": "Đã giao hàng"}],
+           "line_items": [{"sku": "A", "name": "Son", "quantity": 1, "price": 120000}]}
+    o = HaravanConnector(acc(Platform.haravan), S, httpx.AsyncClient()).normalize(raw)
+    assert o.order_id == "#1005" and o.status == OrderStatus.delivered and o.shipping.district == "Quận 11"
+    assert o.shipping.logistics_status == "Đã giao hàng" and o.shipping.tracking_number == "403943"
+
+
+def test_jt_digest_matches_doc_example():
+    from orderhub.carriers import jt_digest, jt_password_cipher
+    assert jt_digest("{}", "k") == jt_digest("{}", "k") and len(jt_digest("{}", "k")) == 24
+    assert len(jt_password_cipher("H5CD3zE6")) == 32 and jt_password_cipher("x").isupper()
+    assert carrier_platform("J&T Express") == Platform.jt
+
+
+async def test_jt_track_latest_scan():
+    from orderhub.carriers import JtClient
+
+    def handler(req: httpx.Request):
+        assert req.headers["apiAccount"] == "178" and req.headers["digest"]
+        assert b"bizContent" in req.content
+        return httpx.Response(200, json={"code": "1", "msg": "success", "data": [{"billCode": "8428", "details": [
+            {"scanTime": "2024-06-05 10:00:00", "scanTypeCode": 106, "scanTypeName": "Nhận hàng"},
+            {"scanTime": "2024-06-05 15:57:04", "scanTypeCode": 113, "scanTypeName": "Ký nhận"}]}]})
+
+    c = JtClient(acc(Platform.jt, {"api_account": "178", "private_key": "k", "customer_code": "C",
+                                   "password": "p"}), S, _client(handler))
+    res = await c.track("8428")
+    assert res.status == OrderStatus.delivered and res.logistics_status == "Ký nhận"

@@ -22,6 +22,8 @@ MOCK_SHOPS = [
     (Platform.tpos, "shop-me-be", "TPOS - Shop Mẹ & Bé"),
     (Platform.nhanh, "185432", "Nhanh.vn - Nội Thất Gỗ"),
     (Platform.pancake, "8812", "Pancake - Thời Trang Livestream"),
+    (Platform.haravan, "haravan-myphamxanh", "Haravan - Mỹ Phẩm Xanh"),
+    (Platform.jt, "jt-084LC00001", "J&T - KH 084LC00001"),
     (Platform.ghtk, "ghtk-kho-hcm", "GHTK - Kho HCM"),
     (Platform.ghtk, "ghtk-kho-hn", "GHTK - Kho Hà Nội"),
     (Platform.ghn, "ghn-2510001", "GHN - Shop 2510001"),

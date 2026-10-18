@@ -4,6 +4,7 @@ import httpx
 
 from orderhub.config import Settings
 from orderhub.connectors.base import Connector, ConnectorError
+from orderhub.connectors.haravan import HaravanConnector
 from orderhub.connectors.lazada import LazadaConnector
 from orderhub.connectors.mock import MockConnector
 from orderhub.connectors.nhanh import NhanhConnector
@@ -22,6 +23,7 @@ REGISTRY: dict[Platform, type[Connector]] = {
     Platform.tpos: TposConnector,
     Platform.nhanh: NhanhConnector,
     Platform.pancake: PancakeConnector,
+    Platform.haravan: HaravanConnector,
 }
 
 

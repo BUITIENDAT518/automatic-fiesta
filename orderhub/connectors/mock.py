@@ -35,7 +35,7 @@ CARRIERS = {
     Platform.lazada: ["Lazada Express", "Giao Hàng Tiết Kiệm", "Ninja Van", "J&T Express"],
 }
 DEFAULT_CARRIERS = ["Giao Hàng Tiết Kiệm", "Giao Hàng Nhanh", "Viettel Post", "J&T Express"]
-PREFIX = {"tiktok": "57", "lazada": "4", "sapo": "SON", "tpos": "TP", "nhanh": "NH", "pancake": "PK"}
+PREFIX = {"tiktok": "57", "lazada": "4", "sapo": "SON", "tpos": "TP", "nhanh": "NH", "pancake": "PK", "haravan": "HRV"}
 PRODUCTS = [("AO-THUN-01", "Áo thun cotton basic", 129000), ("QUAN-JEAN-02", "Quần jean slim fit", 349000),
             ("TAI-NGHE-03", "Tai nghe Bluetooth TWS", 259000), ("SAC-DU-PHONG-04", "Sạc dự phòng 10000mAh", 299000),
             ("SERUM-05", "Serum vitamin C 30ml", 189000), ("GIAY-06", "Giày sneaker trắng", 459000),
@@ -49,6 +49,8 @@ LOGISTICS = {OrderStatus.pending: None, OrderStatus.ready_to_ship: "Chờ lấy 
 def _tracking(rng: random.Random, carrier: str) -> str:
     if "Tiết Kiệm" in carrier:
         return f"S{rng.randint(10**6, 10**7)}.{rng.randint(10**8, 10**9)}"
+    if "J&T" in carrier:
+        return "8" + "".join(rng.choices("0123456789", k=11))
     if "Nhanh" in carrier:
         return "".join(rng.choices("ABCDEFGHKLMNPQRTUVWXY", k=4)) + "".join(rng.choices("0123456789", k=4))
     return f"{carrier[:2].upper()}{rng.randint(10**9, 10**10)}VN"

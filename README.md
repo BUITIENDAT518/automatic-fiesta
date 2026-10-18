@@ -80,9 +80,14 @@ sang `error`. Tài khoản vận chuyển được xoay vòng round-robin, và h
 | Sapo | Lấy đơn | `{"store": "<alias>", "access_token": "..."}` hoặc `api_key` + `api_secret` | `/admin/orders.json` |
 | Nhanh.vn | Lấy đơn | `{"access_token", "business_id", "expires_at"}`, env `NHANH_APP_ID` | API v3, token 1 năm, không refresh |
 | Pancake POS | Lấy đơn | `{"api_key": "..."}` | `pos.pages.fm/api/v1` |
+| Haravan | Lấy đơn | `{"access_token": "..."}` (private app token, Bearer) | `apis.haravan.com/com/orders.json` |
 | TPOS | Lấy đơn | `{"tenant", "username", "password"}` | **Thử nghiệm**: TPOS không có tài liệu API công khai |
 | GHTK | Vận chuyển | `{"token": "...", "partner_code": "..."}` | `/services/shipment/v2/{mã}` |
 | GHN | Vận chuyển | `{"token": "...", "shop_id": 123}` | `/v2/shipping-order/detail` |
+| J&T Express | Vận chuyển | `{"api_account", "private_key", "customer_code", "password"}` | `/logistics/trace`, ký `digest` |
+
+SPX Express, BEST Express và Ninja Van chưa có connector: SPX và BEST không công bố API công khai (chỉ cấp cho
+đối tác), tài liệu API Ninja Van chưa truy cập được để xác minh endpoint.
 
 API (admin): `GET /api/accounts`, `POST /api/accounts`, `PATCH /api/accounts/{platform}/{id}?active=false`,
 `DELETE /api/accounts/{platform}/{id}`, `POST /api/accounts/{platform}/{id}/check` (kiểm tra đăng nhập thật).
