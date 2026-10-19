@@ -3,7 +3,8 @@
 
 TPOS has no public API docs. Login uses the OAuth password grant that the TPOS web app uses
 (POST https://<tenant>.tpos.vn/token, client_id=tmtWebApp); orders come from the same OData view the web app's
-invoice grid uses (/odata/FastSaleOrder/ODataService.GetView — invoices and drafts alike). Field names were confirmed
+invoice grid uses /odata/FastSaleOrder/ODataService.GetView and the online-order grid (drafts from
+Messenger / Facebook comments) uses /odata/SaleOnline_Order/ODataService.GetView. Field names were confirmed
 against a live tenant. Every request needs a browser-ish User-Agent — TPOS's IIS layer 403s the default
 httpx UA on both /token and /odata.
 Credentials: {"tenant": "<subdomain>", "username": "...", "password": "..."} — or a captured Bearer token as
@@ -23,7 +24,11 @@ from orderhub.models import Customer, NormalizedOrder, OrderStatus, Platform, Sh
 
 STATE = {"draft": OrderStatus.pending, "open": OrderStatus.ready_to_ship, "paid": OrderStatus.delivered,
          "cancel": OrderStatus.cancelled}
+ONLINE_STATE = {"draft": OrderStatus.pending, "confirmed": OrderStatus.ready_to_ship,
+                "cancel": OrderStatus.cancelled, "cancelled": OrderStatus.cancelled}
 PAGE_SIZE = 200
+# TPOS's IIS layer 403s the default httpx UA on every endpoint.
+UA = {"User-Agent": "Mozilla/5.0"}
 
 
 def tenant_from(value: str | None) -> str | None:
@@ -45,7 +50,7 @@ class TposConnector(Connector):
             "grant_type": "password", "username": self.creds.get("username"), "password": self.creds.get("password"),
             "client_id": "tmtWebApp",
             # TPOS IIS rejects requests without a browser-ish UA (403).
-        }, headers={"User-Agent": "Mozilla/5.0"})
+        }, headers=UA)
         data = resp.json()
         if "access_token" not in data:
             raise ConnectorError(f"tpos login failed: {data.get('error_description') or data.get('error')}")
@@ -53,26 +58,57 @@ class TposConnector(Connector):
                           expires_at=int(time.time()) + int(data.get("expires_in") or 3600))
 
     async def fetch_orders(self, since: datetime, until: datetime) -> AsyncIterator[NormalizedOrder]:
-        url = f"{self.host}/odata/FastSaleOrder/ODataService.GetView"
-        lo, hi = (d.strftime("%Y-%m-%dT%H:%M:%SZ") for d in (since, until))
-        # No Type filter: the view holds both invoices and draft orders (incl. Messenger-created ones).
-        # The view has no "last updated" column — created-date window only.
-        flt = f"DateCreated ge {lo} and DateCreated lt {hi}"
+        # Counter invoices live in FastSaleOrder; online orders (drafts, Messenger & Facebook-comment
+        # orders) live in SaleOnline_Order. Pull both — their id spaces (INV/... vs numeric Code) differ.
+        async for raw in self._page_view("FastSaleOrder", "DateCreated", since):
+            yield self.normalize(raw)
+        async for raw in self._page_view("SaleOnline_Order", "LastUpdated", since):
+            yield self.normalize_online(raw)
+
+    async def _page_view(self, entity: str, order_field: str, since: datetime) -> AsyncIterator[dict]:
+        """Paginate a GetView endpoint newest-first; stop once rows fall below ``since``.
+
+        Server-side $filter is unreliable on these views (Status ignored, date ge -> HTTP 500),
+        so ordering is server-side and the cutoff is applied client-side.
+        """
+        url = f"{self.host}/odata/{entity}/ODataService.GetView"
         skip = 0
         while True:
-            resp = await self.http.get(url, params={"$filter": flt, "$top": PAGE_SIZE, "$skip": skip,
-                                                    "$orderby": "DateCreated"},
+            resp = await self.http.get(url, params={"$top": PAGE_SIZE, "$skip": skip,
+                                                    "$orderby": f"{order_field} desc"},
                                        headers={"Authorization": f"Bearer {self.creds['access_token']}",
-                                                # TPOS IIS rejects requests without a browser-ish UA (403).
-                                                "User-Agent": "Mozilla/5.0"})
+                                                **UA})
             if resp.status_code != 200:
                 raise ConnectorError(f"tpos: HTTP {resp.status_code} {resp.text[:200]}")
             rows = resp.json().get("value") or []
             for raw in rows:
-                yield self.normalize(raw)
-            if len(rows) < PAGE_SIZE:
+                if iso_to_dt(raw.get(order_field) or raw.get("DateCreated")) >= since:
+                    yield raw
+            if (len(rows) < PAGE_SIZE or
+                    iso_to_dt(rows[-1].get(order_field) or rows[-1].get("DateCreated")) < since):
                 return
             skip += PAGE_SIZE
+
+    def normalize_online(self, raw: dict) -> NormalizedOrder:
+        status = str(raw.get("Status") or "").lower()
+        raw_status = raw.get("StatusText") or raw.get("Status") or ""
+        if raw.get("Source"):
+            raw_status = f"{raw_status} · {raw['Source']}" if raw_status else raw["Source"]
+        return NormalizedOrder(
+            platform=Platform.tpos, shop_id=self.shop.shop_id, shop_name=self.shop.name,
+            order_id=str(raw.get("Code") or raw["Id"]),
+            status=ONLINE_STATE.get(status, OrderStatus.unknown),
+            raw_status=raw_status,
+            created_at=iso_to_dt(raw.get("DateCreated")),
+            updated_at=iso_to_dt(raw.get("LastUpdated") or raw.get("DateCreated")),
+            total_amount=Decimal(str(raw.get("TotalAmount") or 0)),
+            customer=Customer(id=str(raw.get("PartnerId") or "") or None,
+                              name=(raw.get("PartnerName") or raw.get("Facebook_UserName")
+                                    or raw.get("Name")),
+                              phone=raw.get("Telephone"), email=raw.get("Email")),
+            shipping=Shipping(recipient_name=raw.get("Name") or raw.get("PartnerName"),
+                              phone=raw.get("Telephone"), address=raw.get("Address")),
+        )
 
     def normalize(self, raw: dict) -> NormalizedOrder:
         state = str(raw.get("State") or "")
