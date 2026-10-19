@@ -57,3 +57,21 @@ def test_append_xlsx_empty_rows(tmp_path):
     assert append_xlsx(path, []) == 0  # file đã có: không ghi lại
     assert append_xlsx(path, [_row("O1")]) == 1
     assert load_workbook(path).active.max_row == 2
+
+
+def test_append_xlsx_dedupes_existing_orders(tmp_path):
+    """Re-exported rows (status updates bump ingested_at) must not append a second row."""
+    path = tmp_path / "orders-master.xlsx"
+    assert append_xlsx(path, [_row("O1"), _row("O2")]) == 2
+    assert append_xlsx(path, [_row("O1"), _row("O2"), _row("O3")]) == 1  # chỉ O3 mới
+    ws = load_workbook(path).active
+    assert [r[ORDER_ID_COL - 1] for r in _values(ws)[1:]] == ["O1", "O2", "O3"]
+
+
+def test_rows_to_xlsx_neutralizes_formulas():
+    r = _row("=1+cmd|'/C calc'!A0")
+    r["customer"]["name"] = "@SUM(1+1)"
+    ws = load_workbook(io.BytesIO(rows_to_xlsx([r]))).active
+    assert ws.cell(2, ORDER_ID_COL).value == "'=1+cmd|'/C calc'!A0"
+    assert ws.cell(2, HEADERS.index("customer") + 1).value == "'@SUM(1+1)"
+    assert ws.cell(2, ORDER_ID_COL).data_type == "s"  # stored as string, not formula

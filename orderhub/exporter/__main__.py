@@ -1,8 +1,10 @@
 """Exporter: appends new orders to the master XLSX file (XLSX_PATH) once a day.
 
-The `exporter:last_run` watermark (epoch seconds) lives in Redis. Each run exports orders created
-since the last run — filtering on created_at, not ingested_at, so orders re-ingested later with a
-new status are never appended twice. With no watermark the first run exports everything at once.
+The `exporter:last_run` watermark (epoch seconds) lives in Redis. Each run selects orders whose
+ingested_at is newer than the watermark minus poll_overlap_s, so orders committed late (collector
+backlog, a newly added shop's backfill) are still caught; append_xlsx skips rows already in the
+file, which also makes a retried export idempotent. If the workbook is missing while a watermark
+exists, the run rebuilds it from scratch. With no watermark the first run exports everything.
 """
 
 from __future__ import annotations
@@ -23,11 +25,15 @@ EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 
 async def export_once(db, r, settings) -> int:
+    path = Path(settings.xlsx_path)
     raw = await r.get(WATERMARK_KEY)
-    since = datetime.fromtimestamp(float(raw), tz=timezone.utc) if raw else EPOCH
-    rows = await db.orders_created_since(since, reveal_pii=True)
-    added = append_xlsx(Path(settings.xlsx_path), rows)
-    await r.set(WATERMARK_KEY, str(datetime.now(timezone.utc).timestamp()))
+    # A missing workbook must be rebuilt from scratch; the watermark alone cannot restore its rows.
+    since = (datetime.fromtimestamp(float(raw), tz=timezone.utc) - timedelta(seconds=settings.poll_overlap_s)
+             if raw and path.exists() else EPOCH)
+    started = datetime.now(timezone.utc)
+    rows = await db.orders_ingested_since(since, reveal_pii=True)
+    added = append_xlsx(path, rows)
+    await r.set(WATERMARK_KEY, str(started.timestamp()))
     return added
 
 
@@ -39,9 +45,9 @@ async def main() -> None:
     stop = stop_event()
     log.info("exporter %s started (file=%s, hour=%d)", settings.worker_id, settings.xlsx_path,
              settings.export_hour_local)
-    if not await r.get(WATERMARK_KEY):
+    if not await r.get(WATERMARK_KEY) or not Path(settings.xlsx_path).exists():
         try:
-            log.info("no watermark yet: exporting all existing orders")
+            log.info("no watermark or workbook missing: exporting all existing orders")
             log.info("appended %d orders to %s", await export_once(db, r, settings), settings.xlsx_path)
         except Exception:
             log.exception("initial export failed")
