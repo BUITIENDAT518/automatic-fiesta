@@ -3,7 +3,7 @@
 
 TPOS has no public API docs. Login uses the OAuth password grant that the TPOS web app uses
 (POST https://<tenant>.tpos.vn/token, client_id=tmtWebApp); orders come from the same OData view the web app's
-invoice grid uses (/odata/FastSaleOrder/ODataService.GetView, Type eq 'invoice'). Field names were confirmed
+invoice grid uses (/odata/FastSaleOrder/ODataService.GetView — invoices and drafts alike). Field names were confirmed
 against a live tenant. Every request needs a browser-ish User-Agent — TPOS's IIS layer 403s the default
 httpx UA on both /token and /odata.
 Credentials: {"tenant": "<subdomain>", "username": "...", "password": "..."} — or a captured Bearer token as
@@ -55,8 +55,9 @@ class TposConnector(Connector):
     async def fetch_orders(self, since: datetime, until: datetime) -> AsyncIterator[NormalizedOrder]:
         url = f"{self.host}/odata/FastSaleOrder/ODataService.GetView"
         lo, hi = (d.strftime("%Y-%m-%dT%H:%M:%SZ") for d in (since, until))
+        # No Type filter: the view holds both invoices and draft orders (incl. Messenger-created ones).
         # The view has no "last updated" column — created-date window only.
-        flt = f"Type eq 'invoice' and DateCreated ge {lo} and DateCreated lt {hi}"
+        flt = f"DateCreated ge {lo} and DateCreated lt {hi}"
         skip = 0
         while True:
             resp = await self.http.get(url, params={"$filter": flt, "$top": PAGE_SIZE, "$skip": skip,
