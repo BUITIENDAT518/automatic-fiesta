@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS orders (
 );
 
 CREATE INDEX IF NOT EXISTS orders_created_idx ON orders (created_at DESC);
+CREATE INDEX IF NOT EXISTS orders_ingested_idx ON orders (ingested_at);
 CREATE INDEX IF NOT EXISTS orders_region_idx ON orders (region, province);
 CREATE INDEX IF NOT EXISTS orders_shop_idx ON orders (platform, shop_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS orders_status_idx ON orders (status);
@@ -249,6 +250,15 @@ class Database:
             "SELECT * FROM orders WHERE platform=$1 AND shop_id=$2 AND order_id=$3", platform, shop_id, order_id
         )
         return self._row_to_dict(r, reveal_pii) if r else None
+
+    async def orders_ingested_since(self, since: datetime, reveal_pii: bool) -> list[dict]:
+        """Orders (re-)ingested after `since`, including late inserts and status updates.
+
+        ingested_at tracks insertion into our DB, not the platform's created_at, so orders
+        backfilled late are still caught. Re-exported duplicates are removed by append_xlsx.
+        """
+        rows = await self.pool.fetch("SELECT * FROM orders WHERE ingested_at > $1 ORDER BY ingested_at", since)
+        return [self._row_to_dict(r, reveal_pii) for r in rows]
 
     async def stats(self, hours: int, filters: dict) -> dict:
         where, args = self._where(hours, filters, None)

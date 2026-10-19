@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import csv
 import io
+import os
 from datetime import datetime, timezone
+from pathlib import Path
+
+from openpyxl import Workbook, load_workbook
 
 CSV_COLUMNS = [
     ("created_at", lambda o: o["created_at"]), ("updated_at", lambda o: o["updated_at"]),
@@ -30,8 +34,62 @@ def rows_to_csv(rows: list[dict]) -> str:
     w = csv.writer(buf)
     w.writerow([name for name, _ in CSV_COLUMNS])
     for o in rows:
-        w.writerow([fn(o) for _, fn in CSV_COLUMNS])
+        w.writerow([_cell(fn(o)) for _, fn in CSV_COLUMNS])
     return buf.getvalue()
+
+
+def _cell(v):
+    """Neutralize spreadsheet formula injection: a field starting with = + - @ (or tab/CR)
+    is prefixed with ' so Excel treats it as text, not a formula."""
+    return "'" + v if isinstance(v, str) and v.startswith(("=", "+", "-", "@", "\t", "\r")) else v
+
+
+def rows_to_xlsx(rows: list[dict]) -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.append([name for name, _ in CSV_COLUMNS])
+    for o in rows:
+        ws.append([_cell(fn(o)) for _, fn in CSV_COLUMNS])
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def append_xlsx(path: Path, rows: list[dict]) -> int:
+    """Append rows to the master XLSX (creating it with the header on first run); returns rows added.
+
+    Rows whose (platform, order_id) is already in the file are skipped, so re-ingested orders
+    (status/logistics updates bump ingested_at) never append a second row. The key omits shop_id:
+    order ids are platform-issued and unique per platform, and the file's shop column holds the
+    display name, which can change. Written via a temp file then os.replace.
+    """
+    if not rows and path.exists():
+        return 0
+    path.parent.mkdir(parents=True, exist_ok=True)
+    seen: set = set()
+    if path.exists():
+        wb = load_workbook(path)
+        ws = wb.worksheets[0]
+        header = [c.value for c in ws[1]]
+        if "platform" in header and "order_id" in header:
+            pi, oi = header.index("platform") + 1, header.index("order_id") + 1
+            seen = {(ws.cell(r, pi).value, ws.cell(r, oi).value) for r in range(2, ws.max_row + 1)}
+    else:
+        wb = Workbook()
+        ws = wb.active
+        ws.append([name for name, _ in CSV_COLUMNS])
+    added = 0
+    for o in rows:
+        key = (o["platform"], o["order_id"])
+        if key in seen:
+            continue
+        ws.append([_cell(fn(o)) for _, fn in CSV_COLUMNS])
+        seen.add(key)
+        added += 1
+    tmp = path.with_name(path.name + ".tmp")
+    wb.save(tmp)
+    os.replace(tmp, path)
+    return added
 
 
 def digest_text(stats: dict, hours: int) -> str:

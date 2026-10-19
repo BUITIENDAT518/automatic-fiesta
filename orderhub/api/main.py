@@ -126,6 +126,18 @@ async def export_orders_csv(
                     headers={"Content-Disposition": f'attachment; filename="orders-{stamp}.csv"'})
 
 
+XLSX_MEDIA = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+@app.get("/api/export.xlsx")
+async def export_master_xlsx(_: str = Depends(require_admin)):
+    """The master XLSX the exporter service appends to daily."""
+    path = Path(settings.xlsx_path)
+    if not path.is_file():
+        raise HTTPException(404, "chưa có file export — exporter chưa chạy lần nào")
+    return FileResponse(path, media_type=XLSX_MEDIA, filename=path.name)
+
+
 @app.get("/api/stats")
 async def stats(
     role: str = Depends(require_role), hours: int = Query(default=None, ge=1, le=24 * 30),
