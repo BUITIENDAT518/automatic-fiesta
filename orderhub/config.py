@@ -48,6 +48,10 @@ class Settings:
     telegram_admin_ids: str = field(default_factory=lambda: _env("TELEGRAM_ADMIN_IDS", ""))
     digest_hour_local: int = field(default_factory=lambda: int(_env("DIGEST_HOUR_LOCAL", "7")))
     track_interval_s: int = field(default_factory=lambda: int(_env("TRACK_INTERVAL_S", "300")))
+    xlsx_path: str = field(default_factory=lambda: _env("XLSX_PATH", "/data/orders-master.xlsx"))
+    export_hour_local: int = field(
+        default_factory=lambda: int(_env("EXPORT_HOUR_LOCAL", _env("DIGEST_HOUR_LOCAL", "7")))
+    )
 
 
 STREAM_INGEST = "orders.ingest"

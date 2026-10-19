@@ -250,6 +250,15 @@ class Database:
         )
         return self._row_to_dict(r, reveal_pii) if r else None
 
+    async def orders_created_since(self, since: datetime, reveal_pii: bool) -> list[dict]:
+        """Orders created on the platform after `since` — new orders only.
+
+        Uses created_at (not ingested_at) so orders re-ingested by a later status/logistics update
+        are not exported again.
+        """
+        rows = await self.pool.fetch("SELECT * FROM orders WHERE created_at > $1 ORDER BY created_at", since)
+        return [self._row_to_dict(r, reveal_pii) for r in rows]
+
     async def stats(self, hours: int, filters: dict) -> dict:
         where, args = self._where(hours, filters, None)
         totals = await self.pool.fetchrow(

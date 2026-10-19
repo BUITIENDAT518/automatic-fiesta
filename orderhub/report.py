@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import csv
 import io
+import os
 from datetime import datetime, timezone
+from pathlib import Path
+
+from openpyxl import Workbook, load_workbook
 
 CSV_COLUMNS = [
     ("created_at", lambda o: o["created_at"]), ("updated_at", lambda o: o["updated_at"]),
@@ -32,6 +36,42 @@ def rows_to_csv(rows: list[dict]) -> str:
     for o in rows:
         w.writerow([fn(o) for _, fn in CSV_COLUMNS])
     return buf.getvalue()
+
+
+def rows_to_xlsx(rows: list[dict]) -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.append([name for name, _ in CSV_COLUMNS])
+    for o in rows:
+        ws.append([fn(o) for _, fn in CSV_COLUMNS])
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def append_xlsx(path: Path, rows: list[dict]) -> int:
+    """Append rows to the master XLSX (creating it with the header on first run); returns rows added.
+
+    The file is rewritten to a sibling temp file then atomically moved over the original.
+    """
+    if not rows and path.exists():
+        return 0
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        wb = load_workbook(path)
+        ws = wb.worksheets[0]
+    else:
+        wb = Workbook()
+        ws = wb.active
+        ws.append([name for name, _ in CSV_COLUMNS])
+    added = 0
+    for o in rows:
+        ws.append([fn(o) for _, fn in CSV_COLUMNS])
+        added += 1
+    tmp = path.with_name(path.name + ".tmp")
+    wb.save(tmp)
+    os.replace(tmp, path)
+    return added
 
 
 def digest_text(stats: dict, hours: int) -> str:

@@ -43,6 +43,7 @@ dialog{background:var(--card);color:var(--txt);border:1px solid var(--line);bord
 <header>
   <h1>Order Hub</h1><span class="live"><span id="dot" class="dot"></span><span id="livetxt">Đang kết nối…</span></span>
   <span class="mut" id="role"></span><span style="flex:1"></span>
+  <button id="btn-xlsx" hidden onclick="dlXlsx()">Tải XLSX tổng</button>
   <select id="hours"><option value="6">6 giờ</option><option value="24">24 giờ</option><option value="48" selected>48 giờ</option></select>
   <button onclick="logout()">Đăng xuất</button>
 </header>
@@ -128,6 +129,9 @@ async function importFile(){const f=$("a-file").files[0];if(!f){$("a-msg").textC
 async function addAccount(){try{const creds={};$("a-fields").querySelectorAll("input").forEach(i=>{if(i.value.trim())creds[i.dataset.k]=i.value.trim()});
   await send("POST","/api/accounts",{platform:$("a-platform").value,shop_id:$("a-id").value.trim(),name:$("a-name").value.trim()||$("a-id").value.trim(),credentials:creds});
   $("a-msg").textContent="Đã thêm";["a-id","a-name"].forEach(i=>$(i).value="");renderFields();loadPool()}catch(e){$("a-msg").textContent="Lỗi: "+e.message}}
+async function dlXlsx(){const r=await fetch("/api/export.xlsx",{headers:{"X-API-Key":KEY}});
+  if(!r.ok){alert(r.status==404?"Chưa có file export — exporter chưa chạy lần nào":"Lỗi tải file: "+r.status);return}
+  const a=document.createElement("a");a.href=URL.createObjectURL(await r.blob());a.download="orders-master.xlsx";a.click();URL.revokeObjectURL(a.href)}
 function saveKey(){KEY=$("key").value.trim();localStorage.setItem("orderhub_key",KEY);boot()}
 function logout(){localStorage.removeItem("orderhub_key");location.reload()}
 function qs(){const p=new URLSearchParams({hours:$("hours").value});filterIds.forEach(f=>{const v=$("f-"+f).value;if(v)p.set(f,v)});const q=$("f-q").value.trim();if(q)p.set("q",q);return p}
@@ -159,7 +163,7 @@ function connect(){const ws=new WebSocket((location.protocol=="https:"?"wss://":
   ws.onclose=()=>{$("dot").classList.remove("on");$("livetxt").textContent="Mất kết nối, đang thử lại…";setTimeout(connect,3000)};
   ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.event=="created"){newCount++;$("k-new").textContent=newCount}if(offset==0)debounced()}}
 async function boot(){if(!KEY){$("login").hidden=false;return}let m;try{m=await api("/api/meta")}catch(e){return}
-  $("login").hidden=true;$("app").hidden=false;ROLE=m.role;$("pool-add").hidden=m.role!="admin";
+  $("login").hidden=true;$("app").hidden=false;ROLE=m.role;$("pool-add").hidden=m.role!="admin";$("btn-xlsx").hidden=m.role!="admin";
   $("role").textContent=m.role=="admin"?"Quyền: admin (đầy đủ PII)":"Quyền: viewer (che PII)";$("hours").value=m.window_hours;
   const add=(id,vals,lab=x=>x)=>vals.forEach(v=>$(id).insertAdjacentHTML("beforeend",`<option value="${v}">${lab(v)}</option>`));
   add("f-platform",m.platforms,k=>PL[k]);add("a-platform",[...m.platforms,...m.carrier_platforms],k=>PL[k]);renderFields();add("f-region",m.regions);add("f-province",m.provinces);add("f-status",m.statuses,k=>ST[k]);
